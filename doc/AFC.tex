@@ -1,0 +1,33 @@
+\documentclass[10pt]{article}
+\usepackage[usenames]{color} %used for font color
+\usepackage{amssymb} %maths
+\usepackage{amsmath} %maths
+\usepackage[utf8]{inputenc} %useful to type directly diacritic characters
+\usepackage{blindtext}
+\usepackage{enumitem}
+\RequirePackage{bm,xparse,physics}
+
+\begin{document}
+\begin{equation*}
+\begin{split}
+  \texttt{sl\_fc\_gsp} = \\
+  \hyptangent
+  \mathbb{E}_{\sigma \in S} \Bigg\{ 
+  \hyptangent^{-1}
+  \text{corr}_{\text{KP}} \Bigg( &
+            \text{corr}_t\qty( \;
+                       \mathbb{E}_{\qty|\vb*{\xi}^{\sigma\tau'}|} B^{\tau'}(\vb*{\xi}^{\sigma\tau'}, t), \; 
+                       B^{\tau'}(\vb*{\eta}^{\tau'}, t) ), \; \\
+          & \hyptangent
+            \mathbb{E}_{\tau \in T} \qty\bigg{ 
+            \hyptangent^{-1}
+            \text{corr}_t\qty\big( \; 
+                       \mathbb{E}_{\qty|\vb*{\xi}^{\sigma\tau}|}B^\tau(\vb*{\xi}^{\sigma\tau}, t), \;
+                       B^\tau(\vb*{\eta}^\tau, t) ) }
+            \Bigg) \Bigg\} 
+\end{split}            
+\end{equation*}
+for BOLD time-series $B^\tau\qty(t)$ of subject $\tau \in$ cohort $T$, \\
+voxels $\vb*{\xi}^{\sigma\tau}$ in sphere $\sigma \in$ searchlight $S$; \\
+voxels $\vb*{\eta}^\tau$ are samples of the subjects' cortex in atlas space
+\end{document}
