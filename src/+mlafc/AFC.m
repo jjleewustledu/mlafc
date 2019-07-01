@@ -189,21 +189,9 @@ classdef AFC
             
             sl_fmri_pat = tanh(r_glm./count); % 1 x 65549
             
-            %% 3. SL-AFC
+            %% 3. SL-AFC            
             
-            sd_thr = 3; % z-thresh for visualization
-            
-            sl_fc_gsp_mean = nanmean(this.sl_fc_gsp_);              % 1 x 65549
-            sl_fc_gsp_std  = nanstd(this.sl_fc_gsp_);               % "
-            sl_fc_gsp_thr  = sl_fc_gsp_mean - sd_thr*sl_fc_gsp_std; % 1 x 65549
-            
-            afc_glmmap          = zeros(1, length(this.GMmsk_for_glm_)); % 1 x 65549
-            
-            afc_vox             = find(sl_fmri_pat < sl_fc_gsp_thr);     % 1 x 56281
-            afc_glmmap(afc_vox) = 1;                                     % 1 x 65549            
-            [~,~,~,N3D] = this.registry_.atlas_dims();
-            afc_map = zeros(1, N3D); 
-            afc_map(this.glmmsk_indices_) = afc_glmmap; % 1 x 147456
+            afc_map = threshed_afc_map(sl_fmri_pat);
             
             %% Visualization
             
@@ -219,8 +207,20 @@ classdef AFC
             saveFigures
             popd(pwd0)
             
-            %function map = threshed_afc_map()
-            %end
+            function map = threshed_afc_map(sl_fmri_pat)                
+                sd_thr = 3; % z-thresh for visualization   
+                
+                sl_fc_gsp_mean = nanmean(this.sl_fc_gsp_);              % 1 x 65549
+                sl_fc_gsp_std  = nanstd(this.sl_fc_gsp_);               % 1 x 65549
+                sl_fc_gsp_thr  = sl_fc_gsp_mean - sd_thr*sl_fc_gsp_std; % 1 x 65549
+
+                afc_vox             = find(sl_fmri_pat < sl_fc_gsp_thr);     % 1 x 56281
+                afc_glmmap          = zeros(1, length(this.GMmsk_for_glm_)); % 1 x 65549
+                afc_glmmap(afc_vox) = 1;                                     % 1 x 65549            
+                [~,~,~,N3D] = this.registry_.atlas_dims();
+                map = zeros(1, N3D); 
+                map(this.glmmsk_indices_) = afc_glmmap; % 1 x 147456
+            end
         end
         function this = SL_fMRI_initialization(this, varargin)
             %% SL_fMRI_initialization
