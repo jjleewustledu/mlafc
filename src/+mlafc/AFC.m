@@ -198,7 +198,7 @@ classdef AFC
             %ext = '_faln_dbnd_xr3d_uwrp_atl_uout_resid.mat';
             %load (fullfile(patientdir, 'Perceptron', sprintf('%s%s', patientid, ext)), 'bold_frames')
 
-            load(fullfile(ipr.patientdir, 'Perceptron', sprintf('%s%s', ipr.patientid, this.registry_.perceptron_resid_mat)), 'bold_frames')
+            load(fullfile(ipr.patientdir, 'Perceptron', sprintf('%s%s', ipr.patientid, this.registry.perceptron_resid_mat)), 'bold_frames')
             % bold_frames is 2307 x 65549 single, time-samples x parenchyma voxels; N_times is variable across studies
             
             sl_fc = zeros(length(this.sv), sum(this.GMmsk_for_glm_), class(bold_frames));
@@ -206,11 +206,11 @@ classdef AFC
                 fprintf('SL_AFC:  index %i of %i\n', ind, length(this.sv))
                 sphere_vox = this.sv{ind}; % 13 x 1
                 bf_sv = nanmean(bold_frames(:, sphere_vox), 2);
-                sl_fc(ind, :) = PerceptronRelease.corr_new(bf_sv, bold_frames(:, find(this.GMmsk_for_glm_)));
+                sl_fc(ind, :) = this.similarity(bf_sv, bold_frames(:, find(this.GMmsk_for_glm_)), 'kind', 'ch');
                 % sl_fc is 2825 x 18611, times-samples x found gray-matter voxels
             end
             
-            r = SearchLight.corr_kp(sl_fc, this.sl_fc_mean_); % 1 x 2825 <= 2825 x 18611, 2825 x 18611
+            r = this.similarity(sl_fc, this.sl_fc_mean_); % 1 x 2825 <= 2825 x 18611, 2825 x 18611
             
             r_glm = zeros(1, length(this.GMmsk_for_glm_)); % 1 x 65549
             count = zeros(1, length(this.GMmsk_for_glm_)); % 1 x 65549
@@ -228,7 +228,7 @@ classdef AFC
             
             %% 3. SL-AFC            
             
-            afc_map = threshed_afc_map(sl_fmri_pat);
+            afc_map = this.threshed_afc_map(sl_fmri_pat);
             
             %% Visualization
             
@@ -307,7 +307,7 @@ classdef AFC
             %  numvox (minimum number of voxels required to use the sphere)
 
             if ipr.make_sv
-                [Nx,Ny,Nz] = this.registry_.atlas_dims;
+                [Nx,Ny,Nz] = this.registry.atlas_dims;
                 glmmsk_3d = reshape(this.glmatl_, [Nx, Ny, Nz]);
                 R = ipr.sphere_radius;
                 I = ipr.grid_spacing;
@@ -343,20 +343,20 @@ classdef AFC
             
             if ipr.make_sl_fc_mean
                 import mlperceptron.PerceptronRelease;
-                pwd0 = pushd(this.registry_.gtm500_dir);           
+                pwd0 = pushd(this.registry.gtm500_dir);           
                 found_GMmsk_for_glm = find(this.GMmsk_for_glm_); % 18611 x 1
                 sl_fcz_sum = zeros(length(this.sv_), length(found_GMmsk_for_glm)); 
                 
-                for refnum = 1:this.registry_.ref_count
+                for refnum = 1:this.registry.ref_count
                     
                     tic
-                    refid = this.registry_.gtm500_ids{refnum};
-                    load(fullfile(this.registry_.gtm500_dir, refid, 'Perceptron', sprintf('%s%s', refid, this.registry_.ref_resid_mat)),'bold_frames')
+                    refid = this.registry.gtm500_ids{refnum};
+                    load(fullfile(this.registry.gtm500_dir, refid, 'Perceptron', sprintf('%s%s', refid, this.registry.ref_resid_mat)),'bold_frames')
                     % bold_frames has 245 x 65549
                     for ind = 1:length(this.sv_)                        
                         sphere_vox = this.sv_{ind}; % 13 x 1
                         bf_sv = mean(bold_frames(:, sphere_vox),2); % 245 x 1
-                        sl_fc(ind, :) = PerceptronRelease.corr_new(bf_sv, bold_frames(:, found_GMmsk_for_glm)); %#ok<AGROW> % SL_FC
+                        sl_fc(ind, :) = this.similarity(bf_sv, bold_frames(:, found_GMmsk_for_glm), 'kind', 'ch'); % SL_FC
                         % 2825 x 18611
                     end
                     
@@ -369,10 +369,10 @@ classdef AFC
                 end
                 
                 % average
-                sl_fcz_mean = sl_fcz_sum / this.registry_.ref_count;
+                sl_fcz_mean = sl_fcz_sum / this.registry.ref_count;
                 % tanh <-> inverse Fisher z-transform
                 sl_fc_mean = tanh(sl_fcz_mean);
-                save(this.registry_.sl_fc_mean_mat, 'sl_fc_mean')
+                save(this.registry.sl_fc_mean_mat, 'sl_fc_mean')
                 this.sl_fc_mean_ = sl_fc_mean;
                 clear('sl_fc_mean')
                 popd(pwd0)
@@ -383,24 +383,24 @@ classdef AFC
             if ipr.make_sl_fc_gsp
                 import mlperceptron.PerceptronRelease;
                 import mlpark.SearchLight;
-                pwd0 = pushd(this.registry_.gtm500_dir);                 
-                sl_fc_gsp = zeros(this.registry_.ref_count, length(this.GMmsk_for_glm_));
+                pwd0 = pushd(this.registry.gtm500_dir);                 
+                sl_fc_gsp = zeros(this.registry.ref_count, length(this.GMmsk_for_glm_));
                 
-                for refnum = 1:this.registry_.ref_count
+                for refnum = 1:this.registry.ref_count
                     
                     tic
-                    refid = this.registry_.gtm500_ids{refnum};
-                    load(fullfile(this.registry_.gtm500_dir, refid, 'Perceptron', sprintf('%s%s', refid, this.registry_.ref_resid_mat)),'bold_frames')
+                    refid = this.registry.gtm500_ids{refnum};
+                    load(fullfile(this.registry.gtm500_dir, refid, 'Perceptron', sprintf('%s%s', refid, this.registry.ref_resid_mat)),'bold_frames')
                     
                     for ind = 1:length(this.sv_)
                         
                         sphere_vox = this.sv_{ind};
                         bf_sv = mean(bold_frames(:, sphere_vox),2);
-                        sl_fc(ind, :) = PerceptronRelease.corr_new(bf_sv, bold_frames(:, find(this.GMmsk_for_glm_))); % SL_FC
+                        sl_fc(ind, :) = this.similarity(bf_sv, bold_frames(:, find(this.GMmsk_for_glm_)), 'kind', 'ch'); % SL_FC
                         
                     end
                     
-                    r = SearchLight.corr_kp(sl_fc, this.sl_fc_mean_);
+                    r = this.similarity(sl_fc, this.sl_fc_mean_);
                     
                     r_glm = zeros(1, length(this.GMmsk_for_glm_));
                     count = zeros(1, length(this.GMmsk_for_glm_));                    
