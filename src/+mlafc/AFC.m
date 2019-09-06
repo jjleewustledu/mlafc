@@ -122,25 +122,7 @@ classdef AFC
             
             figure; 
             SearchLight.MapOverlay(tgtanatData, intersubject_var,'caxvals',[0 1],'ttlvec', "Intersubject Variability: GSP 100")
-        function tmap = mlp_afc(this, pat_mlp_v3)
-            
-            addpath(genpath('Z:\shimony\Park\Matlab'))
-            load('MLPAFC/mlp_rmse_con100.mat')
-            load('MLPAFC/MLP_GTM_100')
-            
-            MLP_GTM = MLP_GTM_100;
-            mlp_rmse_con = mlp_rmse_con100;
-            
-            pat_mlp_y = 1./(1 + exp(-pat_mlp_v3));
-            pat_mlp = pat_mlp_y./sum(pat_mlp_y')';
-            
-            for sub = 1:50
-                MLP_GTM_sub = MLP_GTM(:,:,sub);
-                sq = (pat_mlp - MLP_GTM_sub).^2;
-                m = (sum(sq')/8);
-                r = sqrt(m);
-                mlp_rmse_pat(:,sub) = r;
-            end
+        end      
         function s = similarity(this, x, y, varargin)
             ip = inputParser;
             addParameter(ip, 'kind', this.similarityKind, @ischar)
@@ -243,21 +225,6 @@ classdef AFC
             save(this.registry.afc_map_mat, 'afc_map')
             saveFigures
             popd(pwd0)
-            
-            function map = threshed_afc_map(sl_fmri_pat)                
-                sd_thr = 3; % z-thresh for visualization   
-                
-                sl_fc_gsp_mean = nanmean(this.sl_fc_gsp_);              % 1 x 65549
-                sl_fc_gsp_std  = nanstd(this.sl_fc_gsp_);               % 1 x 65549
-                sl_fc_gsp_thr  = sl_fc_gsp_mean - sd_thr*sl_fc_gsp_std; % 1 x 65549
-
-                afc_vox             = find(sl_fmri_pat < sl_fc_gsp_thr);     % 1 x 56281
-                afc_glmmap          = zeros(1, length(this.GMmsk_for_glm_)); % 1 x 65549
-                afc_glmmap(afc_vox) = 1;                                     % 1 x 65549            
-                [~,~,~,N3D] = this.registry_.atlas_dims();
-                map = zeros(1, N3D); 
-                map(this.glmmsk_indices_) = afc_glmmap; % 1 x 147456
-            end
         end
         function this = SL_fMRI_initialization(this, varargin)
             %% SL_fMRI_initialization
@@ -423,17 +390,17 @@ classdef AFC
                 popd(pwd0)
             end
         end
-        
-        function sl_fc_gsp = expectation_corr_of_corr_bold(this)
-            
-            
-        end
 		  
  		function this = AFC(varargin)
  			%% AFC
  			%  @param .
 
             import mlperceptron.*;
+            ip = inputParser;
+            addParameter(ip, 'similarityKind', 'kp', @ischar)
+            parse(ip, varargin{:})
+            ipr = ip.Results;
+            this.similarityKind_ = ipr.similarityKind;
             
             this.registry_ = mlafc.AFCRegistry.instance();            
             if isfile(this.registry_.sl_fc_mean_mat)
@@ -455,6 +422,29 @@ classdef AFC
  		end
     end 
     
+    %% PRIVATE
+    
+    properties (Access = private)
+        similarityKind_
+    end
+    
+    methods (Access = private)
+        function map = threshed_afc_map(this, sl_fmri_pat)
+            sd_thr = 3; % z-thresh for visualization   
+
+            sl_fc_gsp_mean = nanmean(this.sl_fc_gsp_);              % 1 x 65549
+            sl_fc_gsp_std  = nanstd(this.sl_fc_gsp_);               % 1 x 65549
+            sl_fc_gsp_thr  = sl_fc_gsp_mean - sd_thr*sl_fc_gsp_std; % 1 x 65549
+
+            afc_vox             = find(sl_fmri_pat < sl_fc_gsp_thr);     % 1 x 56281
+            afc_glmmap          = zeros(1, length(this.GMmsk_for_glm_)); % 1 x 65549
+            afc_glmmap(afc_vox) = 1;                                     % 1 x 65549            
+            [~,~,~,N3D] = this.registry.atlas_dims();
+            map = zeros(1, N3D); 
+            map(this.glmmsk_indices_) = afc_glmmap; % 1 x 147456
+        end
+    end
+    
     %% HIDDEN
     
     properties (Hidden)
@@ -465,6 +455,36 @@ classdef AFC
         sl_fc_mean_     % 2825 x 18611
         sl_fc_gsp_      % 100  x 65549
         sv_             % 1    x 2825  cells with variable size [(x > 1) 1]
+    end
+    
+    methods (Hidden)
+        function MLPAFC(this)
+            this.plotIntersubjectVariability()
+        end
+        function tmap = mlp_afc(this, pat_mlp_v3)
+            addpath(genpath('Z:\shimony\Park\Matlab'))
+            load('MLPAFC/mlp_rmse_con100.mat') %#ok<*LOAD>
+            load('MLPAFC/MLP_GTM_100')
+            
+            MLP_GTM = MLP_GTM_100;
+            mlp_rmse_con = mlp_rmse_con100;
+            
+            pat_mlp_y = 1./(1 + exp(-pat_mlp_v3));
+            pat_mlp = pat_mlp_y./sum(pat_mlp_y')'; %#ok<UDIM>
+            
+            for sub = 1:50
+                MLP_GTM_sub = MLP_GTM(:,:,sub);
+                sq = (pat_mlp - MLP_GTM_sub).^2;
+                m = (sum(sq')/8); %#ok<UDIM>
+                r = sqrt(m);
+                mlp_rmse_pat(:,sub) = r; %#ok<*AGROW>
+            end
+            
+            for i = 1:length(this.GMmsk_for_glm_)                
+                [~,~,~,stats] = ttest2(mlp_rmse_con(i,:),mlp_rmse_pat(i,:));
+                tmap(i) = stats.tstat;                
+            end            
+        end  
     end
 
 	%  Created with Newcl by John J. Lee after newfcn by Frank Gonzalez-Morphy
