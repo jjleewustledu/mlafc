@@ -22,7 +22,32 @@ classdef AFC
 	properties (Dependent)
         atlas_1d
  		registry
+        similarityKind
         sv
+    end
+    
+    methods (Static)
+        function d = kldiv(x, y, varargin)
+            %% Kullback-Leibler or Jensen-Shannon divergence implemented by David Fass, 2016.
+            %  @param required x, y are numeric.
+            %  @param optional 'js' requests the J-S divergence.
+            %  @param optional 'sym' requests a symmetrized K-L
+            
+            p = preprocess(x);
+            q = preprocess(y);
+            d = kldiv((1:length(p))', p, q, varargin{:});
+            
+            function p = preprocess(x)
+                %% p := x interpreted as vector of probabilities
+                
+                if ndims(x) > 1
+                    x = reshape(x, [numel(x) 1]);
+                end
+                x = ascol(x);
+                x = x - min(x);
+                p = x / sum(x) + eps;
+            end
+        end
     end
     
     methods
@@ -34,6 +59,9 @@ classdef AFC
         end
         function g = get.registry(this)
             g = this.registry_;
+        end
+        function g = get.similarityKind(this)
+            g = this.similarityKind_;
         end
         function g = get.sv(this)
             if isempty(this.sv_)
