@@ -44,7 +44,7 @@ classdef AFC
         
         %%
         
-        function MLPAFC(this)
+        function plotIntersubjectVariability(this)
             
             import mlpark.SearchLight
             import mlperceptron.Fourdfp
@@ -66,19 +66,19 @@ classdef AFC
                     
                     % rmse
                     sq = (MLP_GTM_sub1 - MLP_GTM_sub2).^2;
-                    m = sum(sq')/8;
+                    m = sum(sq')/8; %#ok<UDIM>
                     r = sqrt(m);
-                    mlp_rmse_con150(:,ind) = r; %#ok<AGROW>
+                    mlp_rmse_con150(:,ind) = r; 
                     
                     % cc
-                    mlp_cc(:,ind) = SearchLight.corr_v2(MLP_GTM_sub1, MLP_GTM_sub2); %#ok<AGROW>
+                    mlp_cc(:,ind) = SearchLight.corr_v2(MLP_GTM_sub1, MLP_GTM_sub2); 
                     
                     ind = ind+1;
                 end
             end
             
             %%
-            E_mean = mean(mlp_rmse_con150');
+            E_mean = mean(mlp_rmse_con150'); %#ok<UDIM>
             
             intersubject_var = zeros(1,147456);
             intersubject_var(this.glmmsk_indices_) = E_mean;
@@ -87,14 +87,13 @@ classdef AFC
             SearchLight.MapOverlay(tgtanatData, intersubject_var,'caxvals',[0 0.2],'ttlvec', "Intersubject Variability: GSP 100")
             
             %%
-            cc_mean = mean(mlp_cc');
+            cc_mean = mean(mlp_cc'); %#ok<UDIM>
             
             intersubject_var = zeros(1,147456);
             intersubject_var(this.glmmsk_indices_) = cc_mean;
             
             figure; 
             SearchLight.MapOverlay(tgtanatData, intersubject_var,'caxvals',[0 1],'ttlvec', "Intersubject Variability: GSP 100")
-        end
         function tmap = mlp_afc(this, pat_mlp_v3)
             
             addpath(genpath('Z:\shimony\Park\Matlab'))
