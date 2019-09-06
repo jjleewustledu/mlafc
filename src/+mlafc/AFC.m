@@ -141,14 +141,24 @@ classdef AFC
                 r = sqrt(m);
                 mlp_rmse_pat(:,sub) = r;
             end
+        function s = similarity(this, x, y, varargin)
+            ip = inputParser;
+            addParameter(ip, 'kind', this.similarityKind, @ischar)
+            parse(ip, varargin{:})
+            ipr = ip.Results;
             
-            for i = 1:length(this.GMmsk_for_glm_)
-                
-                [~,~,~,stats] = ttest2(mlp_rmse_con(i,:),mlp_rmse_pat(i,:));
-                tmap(i) = stats.tstat;
-                
+            switch lower(ipr.kind)
+                case 'ch'
+                    s = mlperceptron.PerceptronRelease.corr_new(x, y);
+                case 'kp'
+                    s = mlpark.SearchLight.corr_kp(x, y);
+                case 'kl'
+                    s = 1 - tanh(mlafc.AFC.kldiv(x, y)); % dissimilarity -> similarity
+                case 'js'
+                    s = 1 - tanh(mlafc.AFC.kldiv(x, y, 'js')); % dissimilarity -> similarity
+                otherwise
+                    error('mlafc:RuntimeError', 'AFC.similarity.ipr.kind->%s', ipr.kind)
             end
-            
         end
         function SL_AFC(this, varargin)
             %% SL_AFC
