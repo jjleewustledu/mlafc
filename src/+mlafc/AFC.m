@@ -203,7 +203,7 @@ classdef AFC
             workdir = fullfile(ipr.patientdir, ['AFCmap_' datestr(now,30)]);
             mkdir(workdir)
             pwd0 = pushd(workdir);
-            save('afc_map', 'afc_map')
+            save(this.registry.afc_map_mat, 'afc_map')
             saveFigures
             popd(pwd0)
             
@@ -380,7 +380,7 @@ classdef AFC
                     sl_fc_gsp(refnum,:) = tanh(r_glm./count);
                     fprintf('%s processed: %f\n', num2str(refnum), toc)                    
                 end
-                save(this.registry_.sl_fc_gsp_mat, 'sl_fc_gsp')
+                save(this.registry.sl_fc_gsp_mat, 'sl_fc_gsp')
                 this.sl_fc_gsp_ = sl_fc_gsp;
                 clear('sl_fc_gsp')
                 popd(pwd0)

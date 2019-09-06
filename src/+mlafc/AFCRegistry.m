@@ -7,6 +7,7 @@ classdef AFCRegistry < handle & mlpark.ParkRegistry
  	%% It was developed on Matlab 9.5.0.1067069 (R2018b) Update 4 for MACI64.  Copyright 2019 John Joowon Lee.
  	
 	properties (Dependent)
+        afc_map_mat
         Hacker_Data_ALL
         MLPAFC_dir
         MLP_GTM_100
@@ -49,6 +50,9 @@ classdef AFCRegistry < handle & mlpark.ParkRegistry
         
         %% GET
         
+        function g = get.afc_map_mat(~)
+            g = 'afc_map';
+        end
         function g = get.Hacker_Data_ALL(this)
             g = fullfile(this.root, 'data', 'nil-bluearc', 'corbetta', 'Hacker', 'Data', 'ALL', '');
         end
@@ -81,10 +85,10 @@ classdef AFCRegistry < handle & mlpark.ParkRegistry
         function g = get.ref_resid_mat(~)
             g = '_faln_dbnd_xr3d_atl_g7_bpss_resid.mat';
         end
-        function g = get.sl_fc_gsp_mat(this)
+        function g = get.sl_fc_gsp_mat(~)
             g = fullfile(getenv('WORK'), 'sl_fc_gsp.mat');
         end
-        function g = get.sl_fc_mean_mat(this)
+        function g = get.sl_fc_mean_mat(~)
             g = fullfile(getenv('WORK'), 'sl_fc_mean.mat');
         end
     end
