@@ -21,12 +21,35 @@ classdef AFC
  	
 	properties (Dependent)
         atlas_1d
+        product
  		registry
         similarityKind
         sv
     end
     
+    properties
+        afc_map
+        feature
+        patientdir
+        patientid
+        sl_fmri_pat
+        T1_333_1d
+    end
+    
     methods (Static)
+        function vec = imgread(fn)
+            assert(isfile(fn))
+            [pth,fp,x] = myfileparts(fn);
+            if lstrfind(x, '4dfp')
+                vec = mlperceptron.Fourdfp.Read4dfp(fullfile(pth, [fp '.4dfp.img']));
+                return
+            end
+            if lstrfind(x, '.nii')
+                system(sprintf('niftigz_4dfp -4 %s%s %s.4dfp.hdr', fullfile(pth, fp), x, fullfile(pth, fp)))
+                vec = mlperceptron.Fourdfp.Read4dfp(fullfile(pth, [fp '.4dfp.img']));
+                deleteExisting(fullfile(pth, [fp '.4dfp.*']))
+            end
+        end
         function d = kldiv(x, y, varargin)
             %% Kullback-Leibler or Jensen-Shannon divergence implemented by David Fass, 2016.
             %  @param required x, y are numeric.
@@ -48,6 +71,188 @@ classdef AFC
                 p = x / sum(x) + eps;
             end
         end
+        function mapOverlay(anatdata, funcdata, varargin)
+            %% Adapted from codes by Kay Park
+            
+            import mlafc.AFC
+            import mlpark.SearchLight
+            import mlperceptron.Fourdfp
+            import mlperceptron.PerceptronRegistry
+            
+            ip = inputParser;
+            addRequired( ip, 'anatdata', @(x) true);
+            addRequired( ip, 'funcdata', @(x) true);            
+            addParameter(ip, 'ttlvec', ' ' , @(s)isstring(s));
+            addParameter(ip, 'caxvals', [-.25, .25], @isnumeric)
+            addParameter(ip, 'cmapopt', 'parula', @isstring)
+            addParameter(ip, 'spacedim', '333', @isstring)
+            addParameter(ip, 'plane', 'axial', @isstring)
+            addParameter(ip, 'layoutsize', [4, 12], @isnumeric)
+            addParameter(ip, 'snapsize', [4, 12], @isnumeric)
+            addParameter(ip, 'snapind', 1:48, @isnumeric)
+            parse(ip, anatdata, funcdata, varargin{:});
+            ipr = ip.Results;
+            
+            % GLMmask
+            GLMmask = PerceptronRegistry.read_glm_atlas_mask();
+            GLMmask(find(GLMmask)) = 1; 
+            
+            % reshape data
+            N3D = mlafc.AFCRegistry.instance().atlas_numel();
+            anatdata = reshape(anatdata, [1, N3D]); % 1 x 147456 single
+            funcdata = reshape(funcdata, [1, N3D]); 
+            GLMmask  = reshape(GLMmask,  [1, N3D]); 
+            
+            % anatdata, funcdata
+            anat_image_temp = SearchLight.rotflrst_image(anatdata, ipr.layoutsize, ipr.plane);     % 256 x 576  single
+            funcdata_glm = funcdata .* GLMmask;                                              % 1 x 147456 single
+            func_image_temp = SearchLight.rotflrst_image(funcdata_glm, ipr.layoutsize, ipr.plane); % 256 x 576  single
+            
+            if ~isequal(ipr.snapsize, ipr.layoutsize)
+                anat_image = AFC.snapImage(anat_image_temp, ipr.snapsize, ipr.snapind, ipr.plane);
+                func_image = AFC.snapImage(func_image_temp, ipr.snapsize, ipr.snapind, ipr.plane);
+            else
+                anat_image = anat_image_temp; % BUG:  noise [-realmax realmax]
+                func_image = func_image_temp; % BUG:  noise [0 1]
+            end
+            
+            pboptions = [size(anat_image, 2), size(anat_image, 1),1];
+            alphaset = 0.8*ones(1, length(anat_image(:))); 
+            alphaset(find(func_image(:) == 0)) = 0;           % 1 x 147456
+            alphaset3d = reshape(alphaset, size(func_image)); % 256 x 576, [0 1]
+            
+            % plot
+            ax1 = axes; 
+            imagesc(anat_image); 
+            pbaspect(pboptions); 
+            axis off;
+            % caxis([500 max(anat_image(:))-500])
+            % caxis([0 max(anat_image(:))-150])
+            title(ipr.ttlvec, 'interpreter','none')
+            ax2 = axes; 
+            imagesc(func_image); 
+            alpha(alphaset3d); 
+            pbaspect(pboptions);
+            linkaxes([ax1, ax2])
+            ax2.Visible = 'Off';
+            colormap(ax1, 'gray');
+            colormap(ax2, ipr.cmapopt)
+            caxis(ipr.caxvals)
+        end
+        function mapOverlay2(anatdata, funcdata, featdata, varargin)
+            %% Adapted from codes by Kay Park
+            
+            import mlafc.AFC
+            import mlpark.SearchLight
+            import mlperceptron.Fourdfp
+            import mlperceptron.PerceptronRegistry
+            
+            ip = inputParser;
+            addRequired( ip, 'anatdata', @(x) true)
+            addRequired( ip, 'funcdata', @(x) true)
+            addRequired( ip, 'featdata', @(x) true)
+            addParameter(ip, 'ttlvec', ' ' , @(s)isstring(s))
+            addParameter(ip, 'caxvals', [-.25, .25], @isnumeric)
+            addParameter(ip, 'cmapopt', 'parula', @isstring)
+            addParameter(ip, 'spacedim', '333', @isstring)
+            addParameter(ip, 'plane', 'axial', @isstring)
+            addParameter(ip, 'layoutsize', [4, 12], @isnumeric)
+            addParameter(ip, 'snapsize', [4, 12], @isnumeric)
+            addParameter(ip, 'snapind', 1:48, @isnumeric)
+            parse(ip, anatdata, funcdata, featdata, varargin{:})
+            ipr = ip.Results;
+            
+            % GLMmask
+            GLMmask = PerceptronRegistry.read_glm_atlas_mask();
+            GLMmask(find(GLMmask)) = 1; 
+            
+            % reshape data
+            N3D = mlafc.AFCRegistry.instance().atlas_numel();
+            GLMmask  = reshape(GLMmask,  [1, N3D]); % 1 x 147456 single 
+            anatdata = reshape(anatdata, [1, N3D]);
+            funcdata = reshape(funcdata, [1, N3D]); 
+            featdata = reshape(featdata, [1, N3D]); 
+            
+            % anatdata, funcdata, featdata
+            funcdata_glm = funcdata .* GLMmask;                                                    % 1 x 147456 single            
+            featdata_glm = featdata .* GLMmask;   
+            anat_image_temp = SearchLight.rotflrst_image(anatdata, ipr.layoutsize, ipr.plane);     % 256 x 576  single
+            func_image_temp = SearchLight.rotflrst_image(funcdata_glm, ipr.layoutsize, ipr.plane);
+            feat_image_temp = edge( ...
+                              SearchLight.rotflrst_image(featdata_glm, ipr.layoutsize, ipr.plane));
+            
+            if ~isequal(ipr.snapsize, ipr.layoutsize)
+                anat_image = AFC.snapImage(anat_image_temp, ipr.snapsize, ipr.snapind, ipr.plane);
+                func_image = AFC.snapImage(func_image_temp, ipr.snapsize, ipr.snapind, ipr.plane);
+                feat_image = AFC.snapImage(feat_image_temp, ipr.snapsize, ipr.snapind, ipr.plane);
+            else
+                anat_image = anat_image_temp; % BUG:  noise [-realmax realmax]
+                func_image = func_image_temp; % BUG:  noise [0 1]
+                feat_image = feat_image_temp; % BUG:  noise [0 1]
+            end
+            
+            pboptions = [size(anat_image, 2), size(anat_image, 1), 1];
+            alphaFeat = ones(1, length(anat_image(:))); 
+            alphaFeat(find(feat_image(:) == 0)) = 0;           % 1 x 147456
+            alphaFeat = reshape(alphaFeat, size(func_image)); % 256 x 576, [0 1]
+            alphaFunc = ones(1, length(anat_image(:))); 
+            alphaFunc(find(func_image(:) == 0)) = 0;           % 1 x 147456
+            alphaFunc = reshape(alphaFunc, size(func_image)); % 256 x 576, [0 1]
+            
+            % plot
+            ax1 = axes; 
+            imagesc(anat_image); 
+            pbaspect(pboptions); 
+            colormap(ax1, 'gray');
+            axis off;
+            title(ipr.ttlvec, 'interpreter','none')
+            
+            ax3 = axes; 
+            imagesc(func_image); 
+            alpha(alphaFunc); 
+            pbaspect(pboptions);
+            linkaxes([ax1, ax3])
+            ax3.Visible = 'Off';
+            colormap(ax3, ipr.cmapopt)
+            caxis(ipr.caxvals)
+            
+            ax2 = axes; 
+            imagesc(feat_image); 
+            alpha(alphaFeat); 
+            pbaspect(pboptions);
+            linkaxes([ax1, ax2])
+            ax2.Visible = 'Off';
+            colormap(ax2, 'gray');
+            caxis(ipr.caxvals)
+        end
+        function plotroc(featdata, funcdata, varargin)
+            ip = inputParser;
+            addRequired(ip, 'featdata', @isnumeric)
+            addRequired(ip, 'funcdata', @isnumeric)            
+            parse(ip, featdata, funcdata, varargin{:})
+            GLMmask = mlperceptron.PerceptronRegistry.read_glm_atlas_mask();
+            GLMmask(find(GLMmask)) = 1; 
+            N3D = mlafc.AFCRegistry.instance().atlas_numel();
+            
+            % reshape
+            GLMmask  = reshape(GLMmask,  [1, N3D]); % 1 x 147456 single 
+            featdata = reshape(featdata, [1, N3D]); 
+            funcdata = reshape(funcdata, [1, N3D]);             
+            
+            % select GLMmask
+            featdata_glm = featdata(logical(GLMmask)); % [0,1]
+            funcdata_glm = funcdata(logical(GLMmask)); % 1 x 65549
+            funcdata_glm = (1 - funcdata_glm)/2;       % [0 1] measure of anomaly
+            
+            % prepare for roc()
+            featdata_glm = [featdata_glm; 1 - featdata_glm];
+            funcdata_glm = [funcdata_glm; 1 - funcdata_glm];
+            [tpr,fpr,thresh] = roc(featdata_glm, funcdata_glm);
+            disp(tpr)
+            disp(fpr)
+            disp(thresh)
+            plotroc(featdata_glm, funcdata_glm)            
+        end
     end
     
     methods
@@ -56,6 +261,17 @@ classdef AFC
         
         function g = get.atlas_1d(~)
             g = mlperceptron.PerceptronRegistry.read_MNI152_T1_0p5mm();
+        end
+        function g = get.product(this)
+            reg = mlperceptron.PerceptronRegistry.instance();
+            [d1,d2,d3] = reg.atlas_dims;
+            img = reshape(this.afc_map, [d1 d2 d3]);
+            img(isnan(img)) = 0;
+            ic = mlfourd.ImagingContext2(img, 'filename', 'afc.4dfp.hdr');
+            fd = ic.fourdfp;            
+            fd.mmppix = [3 -3 -3];
+            fd.originator = [73.5 -87 -84];
+            g = mlfourd.ImagingContext2(fd);
         end
         function g = get.registry(this)
             g = this.registry_;
@@ -75,11 +291,10 @@ classdef AFC
         function plotIntersubjectVariability(this)
             
             import mlpark.SearchLight
-            import mlperceptron.Fourdfp
             
             addpath(genpath('Z:\shimony\Park\Matlab'))
             tgtatlas = 'Z:\shimony\Park\atlas\Targets\MNI152_711-2B_333.4dfp.img';
-            tgtanatData = Fourdfp.Read4dfp(tgtatlas);
+            tgtanatData = this.imgread(tgtatlas);
             
             %% MLP AFC
             numsub = 150;
@@ -142,89 +357,197 @@ classdef AFC
                     error('mlafc:RuntimeError', 'AFC.similarity.ipr.kind->%s', ipr.kind)
             end
         end
-        function SL_AFC(this, varargin)
-            %% SL_AFC
-            % 04/18/19
-            % KP
+        function [this,ipr] = makeSearchlightMap(this, varargin)
+            %% MAKESEARCHLIGHTMAP
+            %  Preconditions:
+            %  -- completion of SL_fMRI_initialization
+            %  -- completion of mlperceptron.PerceptronRelease factory
+            %  @param patientdir is a folder.
+            %  @param patientid is char.
+            %  @param afc_filename is char.
+            %  @param Nframes is numeric.
+            %  @returns instance of mlafc.AFC.
+            %  @returns inputParser.Results.
             
-            % Usage:
-            % 0) Ensure completion of SL_fMRI_initialization
-            % 1) Runs Multi-layer Perceptron (MLP) - Perceptron_Release
-            % 2) Create a patient specific SL_fMRI map
-            % 3) SL-derived aberrant functional connectivity            
-            
-            import mlperceptron.PerceptronRelease
+            import mlperceptron.PerceptronFromFormat
             import mlpark.SearchLight
             import mlpark.*
             
             ip = inputParser;
-            addRequired(ip, 'patientdir', @isfolder)
-            addRequired(ip, 'patientid', @ischar)
+            ip.KeepUnmatched = true;
+            addRequired( ip, 'patientdir', @isfolder)
+            addRequired( ip, 'patientid', @ischar)
+            addParameter(ip, 'afc_filename', ['AFC_this_' datestr(now, 30) '.mat'], @ischar)
+            addParameter(ip, 'Nframes', [], @isnumeric)
             parse(ip, varargin{:})
-            ipr = ip.Results;   
+            ipr = ip.Results;             
+            disp(ipr)
+            this.patientdir = ipr.patientdir;
+            this.patientid = ipr.patientid;
             
-            %% 0.  SL_fMRI_initialization            
+            %% using results of SL_fMRI_initialization            
             
             this.sv_ = this.sv;
             
-            %% 1. MLP
+            %% using results of mlperceptron.PerceptronRelease factory                   
             
-            % Example:
-            % patientdir = '\\bciserver2\Kay\Emily\New_Epilepsy\PT15';
-            % patientid  = 'PT15';                     
+            PerceptronFromFormat.createProbMaps(this.patientdir, this.patientid)
             
-            PerceptronRelease.Perceptron_Release(ipr.patientdir, ipr.patientid)
-            
-            %% 2. Create a patient specific SL-fMRI map
-            
-            %ext = '_faln_dbnd_xr3d_uwrp_atl_uout_resid.mat';
-            %load (fullfile(patientdir, 'Perceptron', sprintf('%s%s', patientid, ext)), 'bold_frames')
+            %% 
 
-            load(fullfile(ipr.patientdir, 'Perceptron', sprintf('%s%s', ipr.patientid, this.registry.perceptron_resid_mat)), 'bold_frames')
+            load(fullfile(this.patientdir, 'Perceptron', sprintf('%s%s', this.patientid, this.registry.perceptron_resid_mat)), 'bold_frames')
             % bold_frames is 2307 x 65549 single, time-samples x parenchyma voxels; N_times is variable across studies
+            
+            if ~isempty(ipr.Nframes)
+                bold_frames = bold_frames(1:ipr.Nframes, :);
+            end 
+            fprintf('makeSearchlightMap.bold_frames.size -> %s\n', mat2str(size(bold_frames)))
             
             sl_fc = zeros(length(this.sv), sum(this.GMmsk_for_glm_), class(bold_frames));
             for ind = 1:length(this.sv) % EXPENSIVE without prealloc; 1:2825
-                fprintf('SL_AFC:  index %i of %i\n', ind, length(this.sv))
                 sphere_vox = this.sv{ind}; % 13 x 1
                 bf_sv = nanmean(bold_frames(:, sphere_vox), 2);
                 sl_fc(ind, :) = this.similarity(bf_sv, bold_frames(:, find(this.GMmsk_for_glm_)), 'kind', 'ch');
                 % sl_fc is 2825 x 18611, times-samples x found gray-matter voxels
+                
+                if 0 == mod(ind, 100)
+                    fprintf('makeSearchlightMap:  assigned sphere_vox for index %i of %i\n', ind, length(this.sv))
+                end
             end
             
             r = this.similarity(sl_fc, this.sl_fc_mean_); % 1 x 2825 <= 2825 x 18611, 2825 x 18611
             
             r_glm = zeros(1, length(this.GMmsk_for_glm_)); % 1 x 65549
-            count = zeros(1, length(this.GMmsk_for_glm_)); % 1 x 65549
-            
+            count = zeros(1, length(this.GMmsk_for_glm_)); % 1 x 65549            
             for ind = 1:length(this.sv)                
                 temp = zeros(1, length(this.GMmsk_for_glm_)); 
                 temp(this.sv{ind}) = atanh(r(ind)); 
                 counttemp = zeros(1, length(this.GMmsk_for_glm_));
                 counttemp(this.sv{ind}) = 1;
                 r_glm = r_glm + temp; 
-                count = count + counttemp;                
-            end
+                count = count + counttemp;
+                
+                if 0 == mod(ind, 100)
+                    fprintf('makeSearchlightMap:  assigned count for index %i of %i\n', ind, length(this.sv))
+                end                
+            end            
+            this.sl_fmri_pat = tanh(r_glm./count); % 1 x 65549
+            this.afc_map = this.diff_map(this.sl_fmri_pat);
+        end
+        function this = makeDifferenceMap(this, varargin)
+            %% MAKEDIFFERENCEMAP
+            %  Preconditions:
+            %  -- completion of SL_fMRI_initialization
+            %  -- completion of mlperceptron.PerceptronRelease factory
+            %  @param patientdir is a folder.
+            %  @param patientid is char.
+            %  @param afc_filename is char.
+            %  @param Nframes is numeric.
+            %  @returns instance of mlafc.AFC.  
+            %  @returns inputParser.Results.       
             
-            sl_fmri_pat = tanh(r_glm./count); % 1 x 65549
+            [this,ipr] = this.makeSearchlightMap(varargin{:});
             
-            %% 3. SL-AFC            
-            
-            afc_map = this.threshed_afc_map(sl_fmri_pat);
-            
-            %% Visualization
-            
-            figure
-            SearchLight.MapOverlay(this.atlas_1d', afc_map)
-            
-            %% save afc_map file
-            
-            workdir = fullfile(ipr.patientdir, ['AFCmap_' datestr(now,30)]);
+            workdir = fullfile(ipr.patientdir, myfileprefix(ipr.afc_filename));
             mkdir(workdir)
             pwd0 = pushd(workdir);
-            save(this.registry.afc_map_mat, 'afc_map')
-            saveFigures
+            save(ipr.afc_filename, 'this')            
+            figure
+            this.mapOverlay(this.atlas_1d', this.afc_map)              
+            saveFigures(workdir)
             popd(pwd0)
+        end
+        function this = makeResectionMap(this, varargin)
+            %% MAKERESECTIONMAP
+            %  Preconditions:
+            %  -- completion of SL_fMRI_initialization
+            %  -- completion of mlperceptron.PerceptronRelease factory
+            %  @param patientdir is a folder.
+            %  @param patientid is char.
+            %  @param afc_filename is char.
+            %  @param Nframes is numeric.
+            %  @param feature is a filename, NIfTI or 4dfp.
+            %  @returns instance of mlafc.AFC.  
+            %  @returns inputParser.Results.            
+            
+            ip = inputParser;
+            ip.KeepUnmatched = true;
+            addRequired( ip, 'patientdir', @isfolder)
+            addRequired( ip, 'patientid', @ischar)
+            addParameter(ip, 'afc_filename', ['AFC_this_' datestr(now, 30) '.mat'], @ischar)
+            addParameter(ip, 'feature_filename', '', @isfile)
+            addParameter(ip, 'load_afc', false, @islogical)
+            parse(ip, varargin{:})
+            ipr = ip.Results;
+            this.patientdir = ipr.patientdir;
+            this.patientid = ipr.patientid;
+            
+            if ipr.load_afc && isfile(ipr.afc_filename)
+                load(ipr.afc_filename, 'this')
+            else
+                this = this.makeSearchlightMap(varargin{:});
+            end
+            
+            workdir = fileparts(ipr.afc_filename);
+            mkdir(workdir)
+            pwd0 = pushd(workdir);
+            save(this.product)
+            save(ipr.afc_filename, 'this',  'ipr') 
+            figure
+            this.feature = this.imgread(ipr.feature_filename);
+            this.feature(this.feature > 0) = 1;
+            this.mapOverlay2(this.read_T1_333', this.afc_map, this.feature)                
+            saveFigures(workdir)
+            popd(pwd0)
+        end
+        function this = makeROC(this, varargin)
+            %% MAKEROC
+            %  Preconditions:
+            %  -- completion of SL_fMRI_initialization
+            %  -- completion of mlperceptron.PerceptronRelease factory
+            %  @param patientdir is a folder.
+            %  @param patientid is char.
+            %  @param afc_filename is char.
+            %  @param Nframes is numeric.
+            %  @param feature is a filename, NIfTI or 4dfp.
+            %  @returns instance of mlafc.AFC.  
+            %  @returns inputParser.Results.            
+            
+            ip = inputParser;
+            ip.KeepUnmatched = true;
+            addRequired( ip, 'patientdir', @isfolder)
+            addRequired( ip, 'patientid', @ischar)
+            addParameter(ip, 'afc_filename', ['AFC_this_' datestr(now, 30) '.mat'], @ischar)
+            addParameter(ip, 'feature_filename', '', @isfile)
+            addParameter(ip, 'load_afc', false, @islogical)
+            parse(ip, varargin{:})
+            ipr = ip.Results;
+            this.patientdir = ipr.patientdir;
+            this.patientid = ipr.patientid;
+            
+            if ipr.load_afc && isfile(ipr.afc_filename)
+                load(ipr.afc_filename, 'this')
+            else
+                this = this.makeSearchlightMap(varargin{:});
+            end
+            
+            workdir = fileparts(ipr.afc_filename);
+            mkdir(workdir)
+            pwd0 = pushd(workdir);
+            save(this.product)
+            save(ipr.afc_filename, 'this',  'ipr') 
+            figure
+            this.feature = this.imgread(ipr.feature_filename);
+            fthresh = dipmax(this.feature)/2;
+            this.feature = single(this.feature > fthresh);
+            this.plotroc(this.feature, this.afc_map)
+            saveFigures(workdir)
+            popd(pwd0)
+        end
+        function [img,frames,voxelsize] = read_T1_333(this)
+            import mlperceptron.*
+            [img,frames,voxelsize] = Fourdfp.read_4dfpimg_v1( ...
+                fullfile(this.patientdir, 'atlas', [this.patientid '_mpr_n1_333_t88.4dfp.img']));
         end
         function this = SL_fMRI_initialization(this, varargin)
             %% SL_fMRI_initialization
@@ -428,20 +751,79 @@ classdef AFC
         similarityKind_
     end
     
-    methods (Access = private)
-        function map = threshed_afc_map(this, sl_fmri_pat)
-            sd_thr = 3; % z-thresh for visualization   
+    methods (Static, Access = private)
+        function im  = snapImage(image, snapsize, snapind, plane) 
+            %% Supports only 333
 
+            [Nx,Ny] = mlafc.AFCRegistry.instance().atlas_dims();
+            switch plane
+                case 'axial'
+                    Nx = 48; Ny = 64;
+                    snapdefind = reshape(1:48, [12 4])';
+                case 'coronal'
+                    Nx = 48; Ny = 48;
+                    snapdefind = reshape(1:64, [8 8])';
+            end
+
+            xsi = 1;
+            for si = 1:length(snapind)                    
+                if si == 1
+                    xsi = 1;
+                else
+                    if xsi < snapsize(2)
+                        xsi = xsi+1;
+                    else
+                        xsi = 1;
+                    end
+                end
+                ysi = ceil(si/snapsize(2));
+
+                [i, j] = find(snapdefind == snapind(si));
+                imtemp = image(Ny*(i-1)+1:Ny*i, Nx*(j-1)+1:Nx*j);
+                im(Ny*(ysi-1)+1:Ny*ysi, Nx*(xsi-1)+1:Nx*xsi) = imtemp;                    
+            end
+        end
+    end
+    methods (Access = private)
+        function map = diff_map(this, sl_fmri_pat)
+            %% DIFF_MAP
+            %  @param sl_fmri_pat is vec, numel(vec) == 65549.
+            %  @returns map of difference from this.sl_fc_gsp_ that is 1 x 147456.
+            
+            sl_fc_gsp_mean = nanmean(this.sl_fc_gsp_); % 1 x 65549            
+            afc_glmmap = sl_fmri_pat - sl_fc_gsp_mean; % 1 x 65549  
+            map = this.maskedVecToFullVec(afc_glmmap);
+        end
+        function vec = maskedVecToFullVec(this, vec0)
+            %% MASKEDVECTOFULLVEC
+            %  @param   vec0 is 1 x 65549 or 65549 x 1
+            %  @returns vec  is 1 x 147456
+            
+            assert(isnumeric(vec0) && length(vec0) == 65549)
+            
+            vec = zeros(1, this.registry.atlas_numel()); 
+            vec(this.glmmsk_indices_) = vec0; 
+        end
+        function map = threshed_afc_map(this, varargin)
+            %% THRESHED_AFC_MAP
+            %  @param sl_fmri_pat is vec, numel(vec) <= 65549.
+            %  @param sd_thr is z-threshold.
+            %  @returns map, a vec that is 1 x 147456.
+            
+            ip = inputParser;
+            addRequired(ip, 'sl_fmri_pat', @isnumeric)
+            addOptional(ip, 'sd_thr', 3, @isnumeric);
+            parse(ip, varargin{:})
+            ipr = ip.Results;
+            
             sl_fc_gsp_mean = nanmean(this.sl_fc_gsp_);              % 1 x 65549
             sl_fc_gsp_std  = nanstd(this.sl_fc_gsp_);               % 1 x 65549
-            sl_fc_gsp_thr  = sl_fc_gsp_mean - sd_thr*sl_fc_gsp_std; % 1 x 65549
+            sl_fc_gsp_thr  = sl_fc_gsp_mean - ipr.sd_thr*sl_fc_gsp_std; % 1 x 65549
 
-            afc_vox             = find(sl_fmri_pat < sl_fc_gsp_thr);     % 1 x 56281
+            afc_vox             = find(ipr.sl_fmri_pat < sl_fc_gsp_thr);     % 1 x 56281
             afc_glmmap          = zeros(1, length(this.GMmsk_for_glm_)); % 1 x 65549
             afc_glmmap(afc_vox) = 1;                                     % 1 x 65549            
-            [~,~,~,N3D] = this.registry.atlas_dims();
-            map = zeros(1, N3D); 
-            map(this.glmmsk_indices_) = afc_glmmap; % 1 x 147456
+            map = this.maskedVecToFullVec(afc_glmmap);
         end
     end
     
@@ -484,7 +866,93 @@ classdef AFC
                 [~,~,~,stats] = ttest2(mlp_rmse_con(i,:),mlp_rmse_pat(i,:));
                 tmap(i) = stats.tstat;                
             end            
-        end  
+        end          
+        function this = SL_AFC(this, varargin)
+            %% SL_AFC
+            % 04/18/19
+            % KP
+            
+            % Usage:
+            % 0) Ensure completion of SL_fMRI_initialization
+            % 1) Runs Multi-layer Perceptron (MLP) - Perceptron_Release
+            % 2) Create a patient specific SL_fMRI map
+            % 3) SL-derived aberrant functional connectivity            
+            
+            import mlperceptron.PerceptronFromFormat
+            import mlpark.SearchLight
+            import mlpark.*
+            
+            ip = inputParser;
+            addRequired(ip, 'patientdir', @isfolder)
+            addRequired(ip, 'patientid', @ischar)
+            addParameter(ip, 'afc_map_mat', this.registry.afc_map_mat, @ischar)
+            parse(ip, varargin{:})
+            ipr = ip.Results;   
+            
+            %% 0.  SL_fMRI_initialization            
+            
+            this.sv_ = this.sv;
+            
+            %% 1. MLP
+            
+            % Example:
+            % patientdir = '\\bciserver2\Kay\Emily\New_Epilepsy\PT15';
+            % patientid  = 'PT15';                     
+            
+            PerceptronFromFormat.createProbMaps(ipr.patientdir, ipr.patientid)
+            
+            %% 2. Create a patient specific SL-fMRI map
+            
+            %ext = '_faln_dbnd_xr3d_uwrp_atl_uout_resid.mat';
+            %load (fullfile(patientdir, 'Perceptron', sprintf('%s%s', patientid, ext)), 'bold_frames')
+
+            load(fullfile(ipr.patientdir, 'Perceptron', sprintf('%s%s', ipr.patientid, this.registry.perceptron_resid_mat)), 'bold_frames')
+            % bold_frames is 2307 x 65549 single, time-samples x parenchyma voxels; N_times is variable across studies
+            
+            sl_fc = zeros(length(this.sv), sum(this.GMmsk_for_glm_), class(bold_frames));
+            for ind = 1:length(this.sv) % EXPENSIVE without prealloc; 1:2825
+                fprintf('SL_AFC:  index %i of %i\n', ind, length(this.sv))
+                sphere_vox = this.sv{ind}; % 13 x 1
+                bf_sv = nanmean(bold_frames(:, sphere_vox), 2);
+                sl_fc(ind, :) = this.similarity(bf_sv, bold_frames(:, find(this.GMmsk_for_glm_)), 'kind', 'ch');
+                % sl_fc is 2825 x 18611, times-samples x found gray-matter voxels
+            end
+            
+            r = this.similarity(sl_fc, this.sl_fc_mean_); % 1 x 2825 <= 2825 x 18611, 2825 x 18611
+            
+            r_glm = zeros(1, length(this.GMmsk_for_glm_)); % 1 x 65549
+            count = zeros(1, length(this.GMmsk_for_glm_)); % 1 x 65549
+            
+            for ind = 1:length(this.sv)                
+                temp = zeros(1, length(this.GMmsk_for_glm_)); 
+                temp(this.sv{ind}) = atanh(r(ind)); 
+                counttemp = zeros(1, length(this.GMmsk_for_glm_));
+                counttemp(this.sv{ind}) = 1;
+                r_glm = r_glm + temp; 
+                count = count + counttemp;                
+            end
+            
+            this.sl_fmri_pat = tanh(r_glm./count); % 1 x 65549
+            
+            %% 3. SL-AFC            
+            
+            this.afc_map = this.threshed_afc_map(this.sl_fmri_pat);
+            
+            %% Visualization
+            
+            figure
+            this.mapOverlay(this.atlas_1d', this.afc_map)
+            
+            %% save afc_map file
+            
+            workdir = fullfile(ipr.patientdir, ['AFCmap_' datestr(now,30)]);
+            mkdir(workdir)
+            pwd0 = pushd(workdir);
+            afc_map = this.afc_map; %#ok<PROPLC>
+            save(ipr.afc_map_mat, 'afc_map')
+            saveFigures
+            popd(pwd0)
+        end
     end
 
 	%  Created with Newcl by John J. Lee after newfcn by Frank Gonzalez-Morphy

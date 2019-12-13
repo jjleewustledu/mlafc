@@ -23,6 +23,12 @@ classdef AFCRegistry < handle & mlpark.ParkRegistry
         function [nx,ny,nz,n3d] = atlas_dims(varargin)
             [nx,ny,nz,n3d] = mlperceptron.PerceptronRegistry.atlas_dims(varargin{:});
         end
+        function n3d            = atlas_numel(varargin)
+            n3d = mlperceptron.PerceptronRegistry.atlas_numel(varargin{:});
+        end
+        function ns             = atlas_dims_vec(varargin)
+            ns = mlperceptron.PerceptronRegistry.atlas_dims_vec(varargin{:});
+        end
         
         function this = instance(qualifier)
             %% INSTANCE uses string qualifiers to implement registry behavior that
@@ -51,7 +57,7 @@ classdef AFCRegistry < handle & mlpark.ParkRegistry
         %% GET
         
         function g = get.afc_map_mat(~)
-            g = 'afc_map';
+            g = ['afc_map_' datestr(now, 30)];
         end
         function g = get.Hacker_Data_ALL(this)
             g = fullfile(this.root, 'data', 'nil-bluearc', 'corbetta', 'Hacker', 'Data', 'ALL', '');
@@ -100,8 +106,7 @@ classdef AFCRegistry < handle & mlpark.ParkRegistry
         mlp_rmse_con100_
     end
     
-	methods (Access = protected)
-		  
+	methods (Access = protected)		  
  		function this = AFCRegistry(varargin)
  			this = this@mlpark.ParkRegistry(varargin{:});
  		end

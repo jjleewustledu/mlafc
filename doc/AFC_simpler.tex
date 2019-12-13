@@ -5,28 +5,30 @@
 \usepackage[utf8]{inputenc} %useful to type directly diacritic characters
 \usepackage{blindtext}
 \usepackage{enumitem}
+\usepackage{mathtools}
 \RequirePackage{bm,xparse,physics}
 
 \begin{document}
 \begin{equation*}
 \begin{split}
-  \texttt{sl\_fc\_gsp} = \\
+  \texttt{sl\_fc\_gsp} \coloneqq
   \hyptangent
   \mathbb{E}_{\sigma \in S} \Bigg\{ 
   \hyptangent^{-1}
   \text{corr} \Bigg( &
-            \text{corr}_t\qty( \;
-                       \mathbb{E}_{\qty|\vb*{\xi}^{\sigma\tau'}|} B^{\tau'}(\vb*{\xi}^{\sigma\tau'}, t), \; 
-                       B^{\tau'}(\vb*{\eta}^{\tau'}, t) ), \; \\
+            \texttt{similarity}\qty(\text{epilepsy patient}), \; \\
           & \hyptangent
-            \mathbb{E}_{\tau \in T} \qty\bigg{ 
-            \hyptangent^{-1}
-            \text{corr}_t\qty\big( \; 
-                       \mathbb{E}_{\qty|\vb*{\xi}^{\sigma\tau}|}B^\tau(\vb*{\xi}^{\sigma\tau}, t), \;
-                       B^\tau(\vb*{\eta}^\tau, t) ) }
+            \mathbb{E}_{\tau \in \text{GSP}} \qty\bigg{ 
+            \hyptangent^{-1} \texttt{similarity}\qty(\text{GSP cohort}) ) }
             \Bigg) \Bigg\} 
 \end{split}            
 \end{equation*}
+\begin{equation*}
+  \texttt{similarity} \coloneqq \text{corr}\qty( \;
+                       \mathbb{E}_{\sigma \in S} B^{\tau}(\vb*{\xi}^{\sigma\tau}, t), \; 
+                       B^{\tau}(\vb*{\eta}^{\tau}, t) ) \\
+\end{equation*}
+\\
 for BOLD time-series $B^\tau\qty(t)$ of subject $\tau \in$ cohort $T$, \\
 voxels $\vb*{\xi}^{\sigma\tau}$ in sphere $\sigma \in$ searchlight $S$; \\
 voxels $\vb*{\eta}^\tau$ are samples of the subjects' cortex in atlas space
