@@ -28,6 +28,18 @@ classdef Test_AFC < matlab.unittest.TestCase
     end
 
 	methods (Test)
+        function test_msc(this)
+        end
+        function test_hotspot_corr(this)
+            pdir = fullfile(getenv('WORK'), 'Hacker', 'Data', 'ALL', 'Previous', 'PT36', '');
+            pwd0 = pushd(pdir);
+            this.testObj.hotspot_corr( ...
+                pdir, 'PT36', ...
+                'afc_filename', fullfile(pdir, 'AFC_and_resections', 'AFC_and_resections.mat'), ...
+                'feature_filename', fullfile(pdir, 'PT36_Segmentation_333.nii'), ...
+                'load_afc', true);
+            popd(pwd0)
+        end
         function test_ctor(this)
             disp(this.testObj)
         end
@@ -83,6 +95,7 @@ classdef Test_AFC < matlab.unittest.TestCase
             popd(pwd0)
         end
         function test_PT36(this)
+            %pdir = '/Users/jjlee/Downloads/PT36';
             pdir = fullfile(getenv('WORK'), 'Hacker', 'Data', 'ALL', 'Previous', 'PT36', '');
             pwd0 = pushd(pdir);
             this.testObj.makeROC( ...

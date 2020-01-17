@@ -37,6 +37,31 @@ classdef AFC
     end
     
     methods (Static)
+        function fsleyes(img, varargin)
+            ip = inputParser;
+            addParameter(ip, 'changeSign', false) % for viz.
+            addParameter(ip, 'nanToZero', false)
+            addParameter(ip, 'filename', '') % save on the fly while debugging
+            parse(ip, varargin{:})
+            ipr = ip.Results;
+            
+            if ipr.changeSign
+                img = -img;
+            end
+            if ipr.nanToZero
+                img(isnan(img)) = 0;
+            end
+            if ismatrix(img)
+                img = reshape(img, [48 64 48]);
+            end
+            img = flip(flip(img, 1), 2);
+            ic  = mlfourd.ImagingContext2(img);
+            ic.fsleyes
+            if ~isempty(ipr.filename)
+                ic.filename = ipr.filename;
+                ic.save
+            end
+        end
         function vec = imgread(fn)
             assert(isfile(fn))
             [pth,fp,x] = myfileparts(fn);
@@ -226,12 +251,15 @@ classdef AFC
             caxis(ipr.caxvals)
         end
         function plotroc(featdata, funcdata, varargin)
+            import mlafc.AFC.removeInfratentorial
+            
             ip = inputParser;
             addRequired(ip, 'featdata', @isnumeric)
             addRequired(ip, 'funcdata', @isnumeric)            
             parse(ip, featdata, funcdata, varargin{:})
             GLMmask = mlperceptron.PerceptronRegistry.read_glm_atlas_mask();
             GLMmask(find(GLMmask)) = 1; 
+            GLMmask = removeInfratentorial(GLMmask);
             N3D = mlafc.AFCRegistry.instance().atlas_numel();
             
             % reshape
@@ -248,10 +276,19 @@ classdef AFC
             featdata_glm = [featdata_glm; 1 - featdata_glm];
             funcdata_glm = [funcdata_glm; 1 - funcdata_glm];
             [tpr,fpr,thresh] = roc(featdata_glm, funcdata_glm);
-            disp(tpr)
-            disp(fpr)
-            disp(thresh)
-            plotroc(featdata_glm, funcdata_glm)            
+            %figure; plot(tpr{1}); title('TPR')
+            %figure; plot(fpr{1}); title('FPR')
+            %figure; plot(thresh{1}); title('thresholds')
+            figure; plotroc(featdata_glm, funcdata_glm)            
+        end
+        function vec = removeInfratentorial(vec)
+            if ndims(vec) < 3 %#ok<ISMAT>
+                vec = reshape(vec, [48 64 48]);
+            end
+            vec(:,:,1:16) = 0;
+            if ~isempty(getenv('DEBUG'))
+                ic2 = mlfourd.ImagingContext2(vec); ic2.fsleyes
+            end
         end
     end
     
@@ -536,12 +573,53 @@ classdef AFC
             pwd0 = pushd(workdir);
             save(this.product)
             save(ipr.afc_filename, 'this',  'ipr') 
-            figure
             this.feature = this.imgread(ipr.feature_filename);
             fthresh = dipmax(this.feature)/2;
             this.feature = single(this.feature > fthresh);
-            this.plotroc(this.feature, this.afc_map)
+            this.plotroc(this.removeInfratentorial(this.feature), ...
+                         this.removeInfratentorial(this.afc_map))
             saveFigures(workdir)
+            popd(pwd0)
+        end
+        function this = hotspot_corr(this, varargin)
+            %% HOTSPOT_CORR
+            %  Preconditions:
+            %  -- completion of SL_fMRI_initialization
+            %  -- completion of mlperceptron.PerceptronRelease factory
+            %  @param patientdir is a folder.
+            %  @param patientid is char.
+            %  @param afc_filename is char.
+            %  @param Nframes is numeric.
+            %  @param feature is a filename, NIfTI or 4dfp.
+            %  @returns instance of mlafc.AFC.  
+            %  @returns inputParser.Results.            
+            
+            ip = inputParser;
+            ip.KeepUnmatched = true;
+            addRequired( ip, 'patientdir', @isfolder)
+            addRequired( ip, 'patientid', @ischar)
+            addParameter(ip, 'afc_filename', ['AFC_this_' datestr(now, 30) '.mat'], @ischar)
+            addParameter(ip, 'feature_filename', '', @isfile)
+            addParameter(ip, 'load_afc', true, @islogical)
+            parse(ip, varargin{:})
+            ipr = ip.Results;
+            this.patientdir = ipr.patientdir;
+            this.patientid = ipr.patientid;
+            
+            if ipr.load_afc && isfile(ipr.afc_filename)
+                load(ipr.afc_filename, 'this')
+            else
+                this = this.makeSearchlightMap(varargin{:});
+            end
+            
+            workdir = fileparts(ipr.afc_filename);
+            mkdir(workdir)
+            pwd0 = pushd(workdir);
+            
+            
+            this.product % afc.4dfp.hdr
+            
+            
             popd(pwd0)
         end
         function [img,frames,voxelsize] = read_T1_333(this)
