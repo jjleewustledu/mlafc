@@ -13,7 +13,7 @@ classdef Test_AFC < matlab.unittest.TestCase
 	properties
  		registry
  		testObj
-        WORK = '/data/nil-bluearc/shimony/jjlee/Docker/SearchLight'
+        WORK = '/data/nil-bluearc/shimony/jjlee/FocalEpilepsy'
     end
     
     properties (Dependent)
@@ -29,9 +29,14 @@ classdef Test_AFC < matlab.unittest.TestCase
 
 	methods (Test)
         function test_msc(this)
+            obj = mlafc.AFCFromMat;
+            obj = obj.makeMscMap( ...
+                fullfile(getenv('WORK'), 'MSC_subject6', ''), 'MSC_subject6', ...
+                'afc_filename', 'AFC_this_msc_subject6.mat');
+            disp(obj)
         end
         function test_hotspot_corr(this)
-            pdir = fullfile(getenv('WORK'), 'Hacker', 'Data', 'ALL', 'Previous', 'PT36', '');
+            pdir = fullfile(getenv('WORK'), 'PT36', '');
             pwd0 = pushd(pdir);
             this.testObj.hotspot_corr( ...
                 pdir, 'PT36', ...
@@ -71,21 +76,21 @@ classdef Test_AFC < matlab.unittest.TestCase
                 end
             end
         end
-        function test_meeting_20191108(this)
-            pts = {'PT36' 'PT26' 'PT28' 'PT3' 'PT16' 'PT5'};
+        function test_meeting_20200117(this)
+            pts = {'PT36' 'PT26' 'PT28' 'PT3' 'PT16' 'PT5' 'PT15'};
             for p = pts
-                pdir = fullfile(getenv('WORK'), 'Hacker', 'Data', 'ALL', 'Previous', p{1}, '');
+                pdir = fullfile(getenv('WORK'), p{1}, '');
                 pwd0 = pushd(pdir);
                 this.testObj.makeROC( ...
                     pdir, p{1}, ...
                     'afc_filename', fullfile(pdir, 'AFC_and_resections', 'AFC_and_resections.mat'), ...
                     'feature_filename', fullfile(pdir, [p{1} '_Segmentation_333.nii']), ...
-                    'load_afc', false);
+                    'load_afc', true);
                 popd(pwd0)
             end
         end
         function test_New_Epilepsy(this)
-            newepil = '/data/nil-bluearc/shimony/jjlee/New_Epilepsy';
+            newepil = '/data/nil-bluearc/shimony/jjlee/FocalEpilepsy';
             pwd0 = pushd(newepil);
             dt = mlsystem.DirTool('PT*');
             for i = 1:length(dt.fqdns)
@@ -95,8 +100,7 @@ classdef Test_AFC < matlab.unittest.TestCase
             popd(pwd0)
         end
         function test_PT36(this)
-            %pdir = '/Users/jjlee/Downloads/PT36';
-            pdir = fullfile(getenv('WORK'), 'Hacker', 'Data', 'ALL', 'Previous', 'PT36', '');
+            pdir = fullfile(getenv('WORK'), 'PT36', '');
             pwd0 = pushd(pdir);
             this.testObj.makeROC( ...
                 pdir, 'PT36', ...
@@ -105,8 +109,18 @@ classdef Test_AFC < matlab.unittest.TestCase
                 'load_afc', true);
             popd(pwd0)
         end
+        function test_PT3(this)
+            pdir = fullfile(getenv('WORK'), 'PT3', '');
+            pwd0 = pushd(pdir);
+            this.testObj.makeROC( ...
+                pdir, 'PT3', ...
+                'afc_filename', fullfile(pdir, 'AFC_and_resections', 'AFC_and_resections.mat'), ...
+                'feature_filename', fullfile(pdir, 'PT3_Segmentation_333.nii'), ...
+                'load_afc', true);
+            popd(pwd0)
+        end
         function test_09_0009(this)
-            newepil = '/data/nil-bluearc/shimony/jjlee/New_Epilepsy';
+            newepil = '/data/nil-bluearc/shimony/jjlee/FocalEpilepsy';
             pwd0 = pushd(newepil);
             this.testObj.SL_AFC(fullfile(newepil, '09_0009'), '09_0009')
             popd(pwd0)            
