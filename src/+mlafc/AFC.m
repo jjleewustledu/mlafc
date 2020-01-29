@@ -304,6 +304,9 @@ classdef AFC
             [d1,d2,d3] = reg.atlas_dims;
             img = reshape(this.afc_map, [d1 d2 d3]);
             img(isnan(img)) = 0;
+            warning('mlafc:RuntimeWarning', ...
+                'AFC.product() is flipping axes 1 & 2 to correct flips from mlperceptron.Fourdfp.Read4dfp')
+            img = flip(flip(img, 1), 2);
             ic = mlfourd.ImagingContext2(img, 'filename', 'afc.4dfp.hdr');
             fd = ic.fourdfp;            
             fd.mmppix = [3 -3 -3];
@@ -556,7 +559,7 @@ classdef AFC
             addRequired( ip, 'patientid', @ischar)
             addParameter(ip, 'afc_filename', ['AFC_this_' datestr(now, 30) '.mat'], @ischar)
             addParameter(ip, 'feature_filename', '', @isfile)
-            addParameter(ip, 'load_afc', false, @islogical)
+            addParameter(ip, 'load_afc', true, @islogical)
             parse(ip, varargin{:})
             ipr = ip.Results;
             this.patientdir = ipr.patientdir;
@@ -617,7 +620,9 @@ classdef AFC
             pwd0 = pushd(workdir);
             
             
-            this.product % afc.4dfp.hdr
+            
+            img = this.product.fourdfp.img; % afc.4dfp.hdr
+            
             
             
             popd(pwd0)
@@ -823,13 +828,13 @@ classdef AFC
  		end
     end 
     
-    %% PRIVATE
+    %% PROTECTED
     
-    properties (Access = private)
+    properties (Access = protected)
         similarityKind_
     end
     
-    methods (Static, Access = private)
+    methods (Static, Access = protected)
         function im  = snapImage(image, snapsize, snapind, plane) 
             %% Supports only 333
 
@@ -862,7 +867,7 @@ classdef AFC
             end
         end
     end
-    methods (Access = private)
+    methods (Access = protected)
         function map = diff_map(this, sl_fmri_pat)
             %% DIFF_MAP
             %  @param sl_fmri_pat is vec, numel(vec) == 65549.
