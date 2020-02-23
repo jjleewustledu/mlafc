@@ -584,8 +584,8 @@ classdef AFC
             saveFigures(workdir)
             popd(pwd0)
         end
-        function this = hotspot_corr(this, varargin)
-            %% HOTSPOT_CORR
+        function cut_corr = resection_corr(this, varargin)
+            %% RESECTION_CORR
             %  Preconditions:
             %  -- completion of SL_fMRI_initialization
             %  -- completion of mlperceptron.PerceptronRelease factory
@@ -604,26 +604,90 @@ classdef AFC
             addParameter(ip, 'afc_filename', ['AFC_this_' datestr(now, 30) '.mat'], @ischar)
             addParameter(ip, 'feature_filename', '', @isfile)
             addParameter(ip, 'load_afc', true, @islogical)
+            addParameter(ip, 'Nsigma', 2, @isnumeric)
             parse(ip, varargin{:})
             ipr = ip.Results;
             this.patientdir = ipr.patientdir;
-            this.patientid = ipr.patientid;
-            
-            if ipr.load_afc && isfile(ipr.afc_filename)
-                load(ipr.afc_filename, 'this')
-            else
-                this = this.makeSearchlightMap(varargin{:});
-            end
-            
+            this.patientid = ipr.patientid;                        
             workdir = fileparts(ipr.afc_filename);
-            mkdir(workdir)
             pwd0 = pushd(workdir);
             
+            % retrieve afc \in R^3; threshold to mask
+            cut = mlfourd.ImagingContext2(sprintf('../%s_Segmentation.4dfp.hdr', this.patientid));
+            mu = cut.dipmean();
+            cut_thr = cut.thresh(mu);
             
+            % retrieve bold \in R^{3+1}; cut_dyn := bold in R using afc mask
+            bold = mlperceptron.PerceptronRelease.bold_frames_mat_to_ImagingContext(ipr.patientdir);            
+            bold_img = bold.fourdfp.img;
+            Nxyz = [size(bold_img, 1) size(bold_img, 2) size(bold_img, 3)];
+            Nt = size(bold_img, 4);
+            cut_bool = cut_thr.logical;
+            cut_dyn = zeros(Nt, 1);
+            for t = 1:Nt
+                bold_frame = bold_img(:,:,:,t);
+                cut_dyn(t) = mean(bold_frame(cut_bool));
+            end 
             
-            img = this.product.fourdfp.img; % afc.4dfp.hdr
+            % correlate cut_dyn in R with bold in R^{1+3}
+            bold_img = reshape(bold_img, [prod(Nxyz) Nt]);
+            c = corr(cut_dyn, bold_img');
+            c = reshape(c, Nxyz);
+            cut_corr = mlfourd.ImagingContext2(c, 'mmppix', [3 3 3], 'filename', 'resection_corr.4dfp.hdr');            
             
+            popd(pwd0)
+        end
+        function afc_corr = hotspot_corr(this, varargin)
+            %% HOTSPOT_CORR
+            %  Preconditions:
+            %  -- completion of SL_fMRI_initialization
+            %  -- completion of mlperceptron.PerceptronRelease factory
+            %  @param patientdir is a folder.
+            %  @param patientid is char.
+            %  @param afc_filename is char.
+            %  @param Nframes is numeric.
+            %  @param feature is a filename, NIfTI or 4dfp.
+            %  @returns instance of mlafc.AFC.  
+            %  @returns inputParser.Results.            
             
+            ip = inputParser;
+            ip.KeepUnmatched = true;
+            addRequired( ip, 'patientdir', @isfolder)
+            addRequired( ip, 'patientid', @ischar)
+            addParameter(ip, 'afc_filename', ['AFC_this_' datestr(now, 30) '.mat'], @ischar)
+            addParameter(ip, 'feature_filename', 'afc.4dfp.hdr', @isfile)
+            addParameter(ip, 'load_afc', true, @islogical)
+            addParameter(ip, 'Nsigma', 2, @isnumeric)
+            parse(ip, varargin{:})
+            ipr = ip.Results;
+            this.patientdir = ipr.patientdir;
+            this.patientid = ipr.patientid;                        
+            workdir = fileparts(ipr.afc_filename);
+            pwd0 = pushd(workdir);
+            
+            % retrieve afc \in R^3; threshold to mask
+            afc = mlfourd.ImagingContext2(ipr.feature_filename);
+            mu = afc.dipmean();
+            sigma = afc.dipstd();
+            afc_uthr = afc.uthresh(mu - ipr.Nsigma*sigma);            
+            
+            % retrieve bold \in R^{3+1}; afc_dyn := bold in R using afc mask
+            bold = mlperceptron.PerceptronRelease.bold_frames_mat_to_ImagingContext(ipr.patientdir);            
+            bold_img = bold.fourdfp.img;
+            Nxyz = [size(bold_img, 1) size(bold_img, 2) size(bold_img, 3)];
+            Nt = size(bold_img, 4);
+            afc_bool = afc_uthr.logical;
+            afc_dyn = zeros(Nt, 1);
+            for t = 1:Nt
+                bold_frame = bold_img(:,:,:,t);
+                afc_dyn(t) = mean(bold_frame(afc_bool));
+            end 
+            
+            % correlate afc_dyn in R with bold in R^{1+3}
+            bold_img = reshape(bold_img, [prod(Nxyz) Nt]);
+            c = corr(afc_dyn, bold_img');
+            c = reshape(c, Nxyz);
+            afc_corr = mlfourd.ImagingContext2(c, 'mmppix', [3 3 3], 'filename', 'afc_corr.4dfp.hdr');            
             
             popd(pwd0)
         end
