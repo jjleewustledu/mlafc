@@ -53,7 +53,7 @@ classdef Test_AFC < matlab.unittest.TestCase
             hotspot = this.testObj.resection_corr( ...
                 pdir, 'PT36', ...
                 'afc_filename', fullfile(pdir, 'AFC_and_resections', 'AFC_and_resections.mat'), ...
-                'feature_filename', fullfile(pdir, 'PT36_Segmentation.4dfp.hdr'), ...
+                'feature_filename', fullfile(pdir, 'PT36_Segmentation_333.nii'), ...
                 'load_afc', true);
             hotspot.fsleyes
             hotspot.save
@@ -91,7 +91,7 @@ classdef Test_AFC < matlab.unittest.TestCase
             end
         end
         function test_meeting_20200117(this)
-            pts = {'PT36' 'PT26' 'PT28' 'PT3' 'PT16' 'PT5' 'PT15'};
+            pts = {'PT36' 'PT26' 'PT28' 'PT3' 'PT16' 'PT5' 'PT15' 'PT34' 'PT35'};
             for p = pts
                 pdir = fullfile(getenv('WORK'), p{1}, '');
                 pwd0 = pushd(pdir);
@@ -101,6 +101,23 @@ classdef Test_AFC < matlab.unittest.TestCase
                     'feature_filename', fullfile(pdir, [p{1} '_Segmentation_333.nii']), ...
                     'load_afc', true);
                 popd(pwd0)
+            end
+        end
+        function test_meeting_20200501(this)
+            pts = {'PT36' 'PT26' 'PT28' 'PT3' 'PT16' 'PT5' 'PT15' 'PT34' 'PT35'};
+            sims = zeros(1, length(pts));
+            for ip = 1:length(pts)
+                pdir = fullfile(getenv('WORK'), pts{ip}, '');
+                pwd0 = pushd(pdir);
+                [sims(ip),featifc,funcifc] = this.testObj.makeDice( ...
+                    pdir, pts{ip}, ...
+                    'afc_filename', fullfile(pdir, 'AFC_and_resections', 'AFC_and_resections.mat'), ...
+                    'feature_filename', fullfile(pdir, [pts{ip} '_Segmentation_333.nii']), ...
+                    'load_afc', true);
+                popd(pwd0)
+            end
+            for ip = 1:length(pts)
+                fprintf('%s similarity -> %g\n', pts{ip}, sims(ip))
             end
         end
         function test_New_Epilepsy(this)
@@ -113,13 +130,13 @@ classdef Test_AFC < matlab.unittest.TestCase
             this.testObj.SL_AFC(fullfile(newepil, '09_0009'), '09_0009')
             popd(pwd0)
         end
-        function test_PT36(this)
-            pdir = fullfile(getenv('WORK'), 'PT36', '');
+        function test_PT34(this)
+            pdir = fullfile(getenv('WORK'), 'PT34', '');
             pwd0 = pushd(pdir);
             this.testObj.makeROC( ...
-                pdir, 'PT36', ...
+                pdir, 'PT34', ...
                 'afc_filename', fullfile(pdir, 'AFC_and_resections', 'AFC_and_resections.mat'), ...
-                'feature_filename', fullfile(pdir, 'PT36_Segmentation_333.nii'), ...
+                'feature_filename', fullfile(pdir, 'PT34_Segmentation_333.nii'), ...
                 'load_afc', true);
             popd(pwd0)
         end

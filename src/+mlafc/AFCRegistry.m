@@ -12,6 +12,7 @@ classdef AFCRegistry < handle & mlpark.ParkRegistry
         MLPAFC_dir
         MLP_GTM_100
         mlp_rmse_con100
+        perceptron_uout_resid_mat
         perceptron_resid_mat
         ref_count
         ref_resid_mat
@@ -81,8 +82,10 @@ classdef AFCRegistry < handle & mlpark.ParkRegistry
             end
             g = this.mlp_rmse_con100_;
         end
+        function g = get.perceptron_uout_resid_mat(~)
+            g = '_faln_dbnd_xr3d_uwrp_atl_uout_resid.mat';
+        end
         function g = get.perceptron_resid_mat(~)
-            %g = '_faln_dbnd_xr3d_uwrp_atl_uout_resid.mat';
             g = '_faln_dbnd_xr3d_atl_g7_bpss_resid.mat';
         end
         function g = get.ref_count(~)

@@ -37,6 +37,40 @@ classdef AFC
     end
     
     methods (Static)
+        function [sim,featifc,funcifc] = calcdice(featdata, funcdata, varargin)
+            import mlafc.AFC.removeInfratentorial
+            
+            ip = inputParser;
+            addRequired(ip, 'featdata', @isnumeric)
+            addRequired(ip, 'funcdata', @isnumeric)   
+            addParameter(ip, 'Nsigma', 3, @isnumeric)
+            parse(ip, featdata, funcdata, varargin{:})
+            ipr = ip.Results;
+            
+            [GLMmask,~,~,glmic] = mlperceptron.PerceptronRegistry.read_glm_atlas_mask();
+            GLMmask(find(GLMmask)) = 1; 
+            GLMmask = removeInfratentorial(GLMmask);
+            
+            % reshape
+            GLMmask  = reshape(GLMmask,  [48 64 48]);
+            featdata = reshape(featdata, [48 64 48]) .* GLMmask; 
+            funcdata = reshape(funcdata, [48 64 48]) .* GLMmask;
+            
+            % threshold funcdata
+            mu = nanmean(funcdata(logical(GLMmask)));
+            sigma = nanstd(funcdata(logical(GLMmask)));
+            funcdata = funcdata < mu - ipr.Nsigma*sigma;
+            
+            featifc = copy(glmic.fourdfp);
+            featifc.img = featdata;
+            featifc.fileprefix = 'featdata';
+            funcifc = copy(glmic.fourdfp);
+            funcifc.img = funcdata;
+            funcifc.fileprefix = 'funcdata';
+            
+            sim = dice(logical(featdata), logical(funcdata));  
+            fprintf('mlafc.AFC.calcdice.sim -> %g\n', sim)
+        end
         function fsleyes(img, varargin)
             ip = inputParser;
             addParameter(ip, 'changeSign', false) % for viz.
@@ -435,7 +469,12 @@ classdef AFC
             
             %% 
 
-            load(fullfile(this.patientdir, 'Perceptron', sprintf('%s%s', this.patientid, this.registry.perceptron_resid_mat)), 'bold_frames')
+            try
+                load(fullfile(this.patientdir, 'Perceptron', sprintf('%s%s', this.patientid, this.registry.perceptron_resid_mat)), 'bold_frames')
+            catch ME
+                handwarning(ME)
+                load(fullfile(this.patientdir, 'Perceptron', sprintf('%s%s', this.patientid, this.registry.perceptron_uout_resid_mat)), 'bold_frames')
+            end
             % bold_frames is 2307 x 65549 single, time-samples x parenchyma voxels; N_times is variable across studies
             
             if ~isempty(ipr.Nframes)
@@ -473,6 +512,50 @@ classdef AFC
             end            
             this.sl_fmri_pat = tanh(r_glm./count); % 1 x 65549
             this.afc_map = this.diff_map(this.sl_fmri_pat);
+        end
+        function [sim,featifc,funcifc] = makeDice(this, varargin)
+            %% MAKEDICE
+            %  Preconditions:
+            %  -- completion of SL_fMRI_initialization
+            %  -- completion of mlperceptron.PerceptronRelease factory
+            %  @param patientdir is a folder.
+            %  @param patientid is char.
+            %  @param afc_filename is char.
+            %  @param Nframes is numeric.
+            %  @param feature is a filename, NIfTI or 4dfp.
+            %  @returns similarity
+            %  @returns ImagingFormatContext
+            
+            ip = inputParser;
+            ip.KeepUnmatched = true;
+            addRequired( ip, 'patientdir', @isfolder)
+            addRequired( ip, 'patientid', @ischar)
+            addParameter(ip, 'afc_filename', ['AFC_this_' datestr(now, 30) '.mat'], @ischar)
+            addParameter(ip, 'feature_filename', '', @isfile)
+            addParameter(ip, 'load_afc', true, @islogical)
+            parse(ip, varargin{:})
+            ipr = ip.Results;
+            this.patientdir = ipr.patientdir;
+            this.patientid = ipr.patientid;
+            
+            if ipr.load_afc && isfile(ipr.afc_filename)
+                load(ipr.afc_filename, 'this')
+            else
+                this = this.makeSearchlightMap(varargin{:});
+            end
+            
+            workdir = fileparts(ipr.afc_filename);
+            mkdir(workdir)
+            pwd0 = pushd(workdir);
+            save(this.product)
+            save(ipr.afc_filename, 'this',  'ipr') 
+            this.feature = this.imgread(ipr.feature_filename);
+            fthresh = dipmax(this.feature)/2;
+            this.feature = single(this.feature > fthresh);
+            [sim,featifc,funcifc] = this.calcdice(this.removeInfratentorial(this.feature), ...
+                                                  this.removeInfratentorial(this.afc_map));
+            %saveFigures(workdir)
+            popd(pwd0)
         end
         function this = makeDifferenceMap(this, varargin)
             %% MAKEDIFFERENCEMAP
