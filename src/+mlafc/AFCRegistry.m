@@ -30,6 +30,14 @@ classdef AFCRegistry < handle & mlpark.ParkRegistry
         function ns             = atlas_dims_vec(varargin)
             ns = mlperceptron.PerceptronRegistry.atlas_dims_vec(varargin{:});
         end
+        function ic             = segmentation(pid)
+            assert(ischar(pid))
+            pid = upper(pid);
+            pwd0 = pushd(fullfile('/data/nil-bluearc/shimony/jjlee/FocalEpilepsy/Emily/Segmentations_06_and_07_2020', pid));
+            fn = glob([pid '*eg*_111_to_333.nii.gz']);
+            ic = mlfourd.ImagingContext2(fn);
+            popd(pwd0)
+        end
         
         function this = instance(qualifier)
             %% INSTANCE uses string qualifiers to implement registry behavior that

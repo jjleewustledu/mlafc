@@ -62,11 +62,13 @@ classdef AFC
             funcdata = funcdata < mu - ipr.Nsigma*sigma;
             
             featifc = copy(glmic.fourdfp);
-            featifc.img = featdata;
-            featifc.fileprefix = 'featdata';
+            featifc.img = single(featdata);
+            featifc.filepath = pwd;
+            featifc.fileprefix = 'calcdice_label';
             funcifc = copy(glmic.fourdfp);
-            funcifc.img = funcdata;
-            funcifc.fileprefix = 'funcdata';
+            funcifc.img = single(funcdata);
+            funcifc.filepath = pwd;
+            funcifc.fileprefix = 'calcdice_afc_3sd';
             
             sim = dice(logical(featdata), logical(funcdata));  
             fprintf('mlafc.AFC.calcdice.sim -> %g\n', sim)

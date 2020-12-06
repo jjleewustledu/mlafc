@@ -28,6 +28,33 @@ classdef Test_AFC < matlab.unittest.TestCase
     end
 
 	methods (Test)
+        function test_makeDice(this)            
+            setenv('WORK', this.WORK)
+            cd(this.WORK)
+            testObj = mlafc.EmilysAFC();
+            pts = {'PT15' 'PT26' 'PT28' 'PT34' 'PT35' 'PT36'};
+            sims = zeros(1, length(pts));
+            summary = '';
+            for s = 0:3
+                for ip = 1:length(pts)
+                    pdir = fullfile(getenv('WORK'), pts{ip}, '');
+                    sdir = fullfile(getenv('WORK'), 'Emily', 'Segmentations_06_and_07_2020', pts{ip}, '');
+                    pwd0 = pushd(pdir);
+                    sims(ip) = testObj.makeDice( ...
+                        pdir, pts{ip}, ...
+                        'afc_filename', fullfile(pdir, 'AFC_and_resections', 'AFC_and_resections_obj.mat'), ...
+                        'feature_filename', fullfile(sdir, [pts{ip} '_seg_toBoldDeformed.nii.gz']), ...
+                        'load_afc', true, ...
+                        'Nsigma', s);
+                    popd(pwd0)
+                end
+                save(sprintf('test_makeDice_%isd.mat', s), 'sims')
+                for ip = 1:length(pts)
+                    summary = [summary sprintf('%s %isd similarity -> %g\n', pts{ip}, s, sims(ip))]; %#ok<AGROW>
+                end
+            end    
+            fprintf(summary)
+        end
         function test_msc(this)
             obj = mlafc.AFCFromMat;
             obj = obj.makeMscMap( ...
@@ -109,7 +136,7 @@ classdef Test_AFC < matlab.unittest.TestCase
             for ip = 1:length(pts)
                 pdir = fullfile(getenv('WORK'), pts{ip}, '');
                 pwd0 = pushd(pdir);
-                [sims(ip),featifc,funcifc] = this.testObj.makeDice( ...
+                sims(ip) = this.testObj.makeDice( ...
                     pdir, pts{ip}, ...
                     'afc_filename', fullfile(pdir, 'AFC_and_resections', 'AFC_and_resections.mat'), ...
                     'feature_filename', fullfile(pdir, [pts{ip} '_Segmentation_333.nii']), ...
@@ -171,6 +198,9 @@ classdef Test_AFC < matlab.unittest.TestCase
                 this.testObj.SL_AFC(dt.fqdns{i}, dt.dns{i})
             end
             popd(pwd0)
+        end
+        function test_resampling_MSC(this)
+            pts = {'PT36' 'PT28' 'PT15' 'PT34' 'PT26' 'PT35'};
         end
 	end
 
