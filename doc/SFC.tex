@@ -27,7 +27,14 @@
             \Bigg) \Bigg\} 
 \end{split}            
 \end{equation*}
-for BOLD time-series $B^\tau\qty(t)$ of subject $\tau \in$ cohort $T$, \\
-voxels $\vb*{\xi}^{\sigma\tau}$ in sphere $\sigma \in$ searchlight $S$; \\
-voxels $\vb*{\eta}^\tau$ are samples of the subjects' cortex in atlas space
+for BOLD time-series $B^\tau\qty(t)$ of subject $\tau \in$ cohort $T$, 
+and voxels $\vb*{\xi}^{\sigma\tau}$ in sphere $\sigma \in$ set of spheres $S$; 
+the voxels $\vb*{\eta}^\tau$ are samples of comparator subjects' cortex in atlas space.  
+The innermost tanh $\mathbb{E}$ tanh$^{-1}$ is a correlation matrix of size $\qty|\sigma| \times \qty|\vb*{\eta}|$.  
+In practice, $\tau'$ denotes only a single patient.  
+Consequently, the outermost corr() contracts voxels $\vb*{\eta}^{\tau'}$ for the patient with voxels $\vb*{\eta}^{\tau}$ averaged over comparator subjects, 
+producing a correlation vector of length $\qty|\sigma| \equiv \qty|S|$. 
+The outermost tanh $\mathbb{E}$ tanh$^{-1}$ produces a scalar measure of similarity of the patient's FC with the comparator subjects' FC.
+
+
 \end{document}

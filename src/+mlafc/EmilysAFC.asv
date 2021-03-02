@@ -143,11 +143,8 @@ classdef EmilysAFC < mlafc.AFC
                 segmentation = globT([g{1} '_*_segmentation_final_111.nii.gz']);
                 seg = mlfourd.ImagingContext2(segmentation{1});
                 afc_prob = mlfourd.ImagingContext2([g{1} '_afc_prob_111.nii.gz']);
-                pr = afc_prob.nifti.img;
-                pr = pr(pr > 0);
-                thr = median(pr);
-                afc_prob = afc_prob.thresh(thr);
-                d = afc_prob.dice(seg);
+                msk = logical(afc_prob);
+                d = afc_prob.dice(seg, msk);
                 fprintf('dice(%s) = %g\n',afc_prob.fileprefix, d)
                 
                 popd(pwd0)
