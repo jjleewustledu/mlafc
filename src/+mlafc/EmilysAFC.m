@@ -130,7 +130,99 @@ classdef EmilysAFC < mlafc.AFC
                 
                 popd(pwd0)
             end
-        end        
+        end
+        function buildSoftmaxOnResection(varargin)
+            ip = inputParser;
+            addOptional(ip, 'toglob', 'PT*', @ischar)
+            addParameter(ip, 'cost', 'corratio', @ischar)
+            addParameter(ip, 'dof', 12, @isscalar)
+            addParameter(ip, 'search', 45, @isscalar)
+            addParameter(ip, 'finesearch', 10, @isscalar)
+            addParameter(ip, 'allbrain', true, @islogical)
+            parse(ip, varargin{:})
+            ipr = ip.Results;
+            ipr.dof = num2str(ipr.dof);
+            
+            for g = globFoldersT(ipr.toglob)  
+                if strcmp(g{1}, 'PT26') || strcmp(g{1}, 'PT28')
+                    warning('mlafc:RuntimeWarning', ...
+                        'EmilysAFC.buildSoftmaxOnResection:  manual registration needed for %s', g{1})
+                    continue
+                end
+                
+                pwd0 = pushd(g{1});
+                
+                % ensure nii.gz
+                if ~isfile('AFC_product.nii.gz')
+                    assert(isfile('AFC_product.4dfp.hdr'))
+                    ic = mlfourd.ImagingContext2('AFC_product.4dfp.hdr');
+                    ic.nifti.save()
+                end
+                
+                s = sprintf('-%i %i', ipr.search, ipr.search);
+                fs = sprintf('%i', ipr.finesearch);
+                opts = ['-bins 256 -cost ' ipr.cost ' -searchrx ' s ' -searchry ' s ' -searchrz ' s ' -dof ' ipr.dof ' -finesearch ' fs ' -interp trilinear'];
+                opts_6 = ['-bins 256 -cost ' ipr.cost ' -searchrx ' s ' -searchry ' s ' -searchrz ' s ' -dof 6 -interp trilinear']; 
+                opts_6_fine = ['-bins 256 -cost ' ipr.cost ' -searchrx ' s ' -searchry ' s ' -searchrz ' s ' -dof 6 -finesearch 5 -interp trilinear']; 
+                opts_12 = ['-bins 256 -cost ' ipr.cost ' -searchrx ' s ' -searchry ' s ' -searchrz ' s ' -dof 12 -interp trilinear'];
+                opts_trans = ['-bins 256 -cost ' ipr.cost ' -searchrx ' s ' -searchry ' s ' -searchrz ' s ' -dof 6 -schedule /usr/local/fsl/etc/flirtsch/sch3Dtrans_3dof -interp trilinear'];
+                opts_apply = '-paddingsize 0.0 -interp trilinear';
+                resection = globT([g{1} '_*_FLIRT_111.nii.gz']);
+                assert(~isempty(resection))
+                segmentation = globT([g{1} '_*_segmentation_final_111.nii.gz']);
+                assert(~isempty(segmentation))
+                
+                try
+                    % flirt BOLD on MPR
+                    [~,r] = mlbash(sprintf('flirt -in %s%s -ref %s%s -out %s%s -omat %s%s %s', ...
+                        g{1}, '_anat_ave_t88_333_brain.nii.gz', ...
+                        g{1}, '_mpr1_on_TRIO_Y_NDC_111_brain.nii.gz', ...
+                        g{1}, '_anat_ave_t88_333_brain_on_mpr1_on_111.nii.gz', ...
+                        g{1}, '_anat_ave_t88_333_brain_on_mpr1_on_111.mat', ...
+                        opts_12));
+                    % flirt MPR on resection
+                    if ipr.allbrain
+                        [~,r] = mlbash(sprintf('flirt -in %s%s -ref %s -out %s%s -omat %s%s %s', ...
+                            g{1}, '_mpr1_on_TRIO_Y_NDC_111_brain.nii.gz', ...
+                            resection{1}, ...
+                            g{1}, '_mpr1_on_FLIRT_111_brain.nii.gz', ...
+                            g{1}, '_mpr1_on_FLIRT_111.mat', ...
+                            opts));
+                    else
+                        [~,r] = mlbash(sprintf('flirt -in %s%s -ref %s -out %s%s -omat %s%s %s', ...
+                            g{1}, '_mpr1_on_TRIO_Y_NDC_111.nii.gz', ...
+                            resection{1}, ...
+                            g{1}, '_mpr1_on_FLIRT_111.nii.gz', ...
+                            g{1}, '_mpr1_on_FLIRT_111.mat', ...
+                            opts));
+                    end
+
+                    % compose xfm
+                    [~,r] = mlbash(sprintf('convert_xfm -omat %s%s -concat %s%s %s%s', ...
+                        g{1}, '_anat_ave_on_FLIRT_111.mat', ...
+                        g{1}, '_mpr1_on_FLIRT_111.mat ', ...
+                        g{1}, '_anat_ave_t88_333_brain_on_mpr1_on_111.mat'));
+
+                    % flirt afc_prob on resection
+                    afc_prob_fn = 'AFC_product.nii.gz';
+                    assert(isfile(afc_prob_fn))
+                    [~,r] = mlbash(sprintf('flirt -in %s -applyxfm -init %s%s -out %s%s %s -ref %s', ...
+                        afc_prob_fn, ...
+                        g{1}, '_anat_ave_on_FLIRT_111.mat', ...
+                        g{1}, '_afc_prob_111.nii.gz ', ...
+                        opts_apply, ...
+                        resection{1}));
+                    
+                    qc = mlfourd.ImagingContext2([g{1} '_afc_prob_111.nii.gz']);
+                    qc.fsleyes(resection{1}, segmentation{1})
+                catch ME
+                    warning('mlafc:RuntimeError', r)
+                    handerror(ME)
+                end
+                
+                popd(pwd0)
+            end
+        end         
         function calc_dice(varargin)
             ip = inputParser;
             addOptional(ip, 'toglob', 'PT*', @ischar)
@@ -148,7 +240,32 @@ classdef EmilysAFC < mlafc.AFC
                 thr = median(pr);
                 afc_prob = afc_prob.thresh(thr);
                 d = afc_prob.dice(seg);
-                fprintf('dice(%s) = %g\n',afc_prob.fileprefix, d)
+                fprintf('dice(%s) = %g; median = %g; mean = %g\n',afc_prob.fileprefix, d, median(pr), mean(pr))
+                
+                popd(pwd0)
+            end
+        end        
+        function calc_histogram(varargin)
+            ip = inputParser;
+            addOptional(ip, 'toglob', 'PT*', @ischar)
+            parse(ip, varargin{:})
+            ipr = ip.Results;
+                        
+            for g = globFoldersT(ipr.toglob)
+                pwd0 = pushd(g{1});
+                
+                afc_prob = mlfourd.ImagingContext2([g{1} '_afc_prob_111.nii.gz']);
+                h = figure;
+                histogram(afc_prob)
+                xlabel('probability of dissimilarity')
+                ylabel('number of voxels')
+                
+                savefig(h, ...
+                    sprintf('EmilysAFC_calc_histogram_%s_afc_prob_111.fig', g{1}))
+                figs = get(0, 'children');
+                saveas(figs(1), ...
+                    sprintf('EmilysAFC_calc_histogram_%s_afc_prob_111.png', g{1}))
+                close(figs(1))
                 
                 popd(pwd0)
             end

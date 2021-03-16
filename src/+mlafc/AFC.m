@@ -343,11 +343,13 @@ classdef AFC
             warning('mlafc:RuntimeWarning', ...
                 'AFC.product() is flipping axes 1 & 2 to correct flips from mlperceptron.Fourdfp.Read4dfp')
             img = flip(flip(img, 1), 2);
-            ic = mlfourd.ImagingContext2(img, 'filename', 'afc.4dfp.hdr');
-            fd = ic.fourdfp;            
-            fd.mmppix = [3 -3 -3];
-            fd.originator = [73.5 -87 -84];
-            g = mlfourd.ImagingContext2(fd);
+            
+            ifc = mlfourd.ImagingFormatContext( ...
+                fullfile(getenv('REFDIR'), '711-2B_333.4dfp.hdr'));
+            ifc.img = img;
+            ifc.filepath = pwd;
+            ifc.fileprefix = 'AFC_product';
+            g = mlfourd.ImagingContext2(ifc);
         end
         function g = get.registry(this)
             g = this.registry_;
@@ -433,6 +435,94 @@ classdef AFC
                     error('mlafc:RuntimeError', 'AFC.similarity.ipr.kind->%s', ipr.kind)
             end
         end
+        function [this,ipr] = makeSoftmax(this, varargin)
+            %% MAKESOFTMAX of dissimilarity
+            %  Preconditions:
+            %  -- completion of SL_fMRI_initialization
+            %  -- completion of mlperceptron.PerceptronRelease factory
+            %  @param patientdir is a folder.
+            %  @param patientid is char.
+            %  @param afc_filename is char.
+            %  @param Nframes is numeric.
+            %  @returns instance of mlafc.AFC.
+            %  @returns inputParser.Results.
+            %  @returns softmax in product cast as ImagingContext2.
+            
+            import mlperceptron.PerceptronFromFormat
+            import mlpark.SearchLight
+            import mlpark.*
+            
+            ip = inputParser;
+            ip.KeepUnmatched = true;
+            addRequired( ip, 'patientdir', @isfolder)
+            addRequired( ip, 'patientid', @ischar)
+            addParameter(ip, 'afc_filename', ['AFC_this_' datestr(now, 30) '.mat'], @ischar)
+            addParameter(ip, 'Nframes', [], @isnumeric)
+            parse(ip, varargin{:})
+            ipr = ip.Results;             
+            disp(ipr)
+            this.patientdir = ipr.patientdir;
+            this.patientid = ipr.patientid;
+            
+            %% using results of SL_fMRI_initialization            
+            
+            this.sv_ = this.sv;
+            
+            %% using results of mlperceptron.PerceptronRelease factory                   
+            
+            PerceptronFromFormat.createProbMaps(this.patientdir, this.patientid)
+            
+            %% 
+
+            try
+                load(fullfile(this.patientdir, 'Perceptron', sprintf('%s%s', this.patientid, this.registry.perceptron_resid_mat)), 'bold_frames')
+            catch ME
+                handwarning(ME)
+                load(fullfile(this.patientdir, 'Perceptron', sprintf('%s%s', this.patientid, this.registry.perceptron_uout_resid_mat)), 'bold_frames')
+            end
+            % bold_frames is 2307 x 65549 single, time-samples x parenchyma voxels; N_times is variable across studies
+            
+            if ~isempty(ipr.Nframes)
+                bold_frames = bold_frames(1:ipr.Nframes, :);
+            end 
+            fprintf('makeSearchlightMap.bold_frames.size -> %s\n', mat2str(size(bold_frames)))
+            
+            sl_fc = zeros(length(this.sv), sum(this.GMmsk_for_glm_), class(bold_frames));
+            for ind = 1:length(this.sv) % EXPENSIVE without prealloc; 1:2825
+                sphere_vox = this.sv{ind}; % 13 x 1
+                bf_sv = nanmean(bold_frames(:, sphere_vox), 2);
+                sl_fc(ind, :) = this.similarity(bf_sv, bold_frames(:, find(this.GMmsk_for_glm_)), 'kind', 'ch');
+                % sl_fc is 2825 x 18611, |spheres| x |found gray-matter voxels|
+                
+                if 0 == mod(ind, 100)
+                    fprintf('makeSearchlightMap:  assigned sphere_vox for index %i of %i\n', ind, length(this.sv))
+                end
+            end
+            
+            r = this.similarity(sl_fc, this.sl_fc_mean_); % 1 x 2825 <= 2825 x 18611, 2825 x 18611
+            
+            r_glm = zeros(1, length(this.GMmsk_for_glm_)); % 1 x 65549
+            count = zeros(1, length(this.GMmsk_for_glm_)); % 1 x 65549            
+            for ind = 1:length(this.sv)                
+                temp = zeros(1, length(this.GMmsk_for_glm_)); 
+                temp(this.sv{ind}) = atanh(r(ind)); 
+                counttemp = zeros(1, length(this.GMmsk_for_glm_));
+                counttemp(this.sv{ind}) = 1;
+                r_glm = r_glm + temp; 
+                count = count + counttemp;
+                
+                if 0 == mod(ind, 100)
+                    fprintf('makeSearchlightMap:  assigned count for index %i of %i\n', ind, length(this.sv))
+                end                
+            end            
+            energy_pi = tanh(r_glm./count); % 1 x 65549
+            prob_pi = exp(-energy_pi);
+            
+            probs = exp(-this.sl_fc_gsp_); % 100 x 65549
+            probs(size(probs,1)+1,:) = prob_pi;
+            this.afc_map = prob_pi ./ sum(probs, 1); 
+            this.afc_map = this.maskedVecToFullVec(this.afc_map); % 1 x 147456
+        end
         function [this,ipr] = makeSearchlightMap(this, varargin)
             %% MAKESEARCHLIGHTMAP
             %  Preconditions:
@@ -489,7 +579,7 @@ classdef AFC
                 sphere_vox = this.sv{ind}; % 13 x 1
                 bf_sv = nanmean(bold_frames(:, sphere_vox), 2);
                 sl_fc(ind, :) = this.similarity(bf_sv, bold_frames(:, find(this.GMmsk_for_glm_)), 'kind', 'ch');
-                % sl_fc is 2825 x 18611, times-samples x found gray-matter voxels
+                % sl_fc is 2825 x 18611, |spheres| x |found gray-matter voxels|
                 
                 if 0 == mod(ind, 100)
                     fprintf('makeSearchlightMap:  assigned sphere_vox for index %i of %i\n', ind, length(this.sv))
@@ -918,11 +1008,11 @@ classdef AFC
                         
                         sphere_vox = this.sv_{ind};
                         bf_sv = mean(bold_frames(:, sphere_vox),2);
-                        sl_fc(ind, :) = this.similarity(bf_sv, bold_frames(:, find(this.GMmsk_for_glm_)), 'kind', 'ch'); % SL_FC
-                        
+                        sl_fc(ind, :) = this.similarity(bf_sv, bold_frames(:, find(this.GMmsk_for_glm_)), 'kind', 'ch'); % SL_FC, corr_t
+
                     end
                     
-                    r = this.similarity(sl_fc, this.sl_fc_mean_);
+                    r = this.similarity(sl_fc, this.sl_fc_mean_); % corr_{eta-}
                     
                     r_glm = zeros(1, length(this.GMmsk_for_glm_));
                     count = zeros(1, length(this.GMmsk_for_glm_));                    
@@ -933,7 +1023,7 @@ classdef AFC
                         counttemp(this.sv_{ind}) = 1;
                         r_glm = r_glm + temp; 
                         count = count + counttemp;                        
-                    end
+                    end % f_{sigma -> xi^pi}
                     
                     % tanh <-> inverse Fisher z-transform
                     sl_fc_gsp(refnum,:) = tanh(r_glm./count);
@@ -1059,17 +1149,17 @@ classdef AFC
         end
     end
     
-    %% HIDDEN
-    
-    properties (Hidden)
-        glmatl_         % 147456 x 1
-        glmmsk_indices_ % 65549  x 1
-        GMmsk_for_glm_  % 65549  x 1
+    properties
+        glmatl_         % 147456 x 1 ~ 48*64*48 x 1
+        glmmsk_indices_ % 65549  x 1 ~ |parenchyma|
+        GMmsk_for_glm_  % 65549  x 1 ~ |parenchyma|
         registry_
-        sl_fc_mean_     % 2825 x 18611
-        sl_fc_gsp_      % 100  x 65549
+        sl_fc_mean_     % 2825 x 18611 ~ |sv_| x |grey matter|
+        sl_fc_gsp_      % 100  x 65549 ~ |GSP| x |parenchyma|
         sv_             % 1    x 2825  cells with variable size [(x > 1) 1]
     end
+    
+    %% HIDDEN
     
     methods (Hidden)
         function MLPAFC(this)

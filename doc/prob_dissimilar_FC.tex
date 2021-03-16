@@ -10,10 +10,8 @@
 \begin{document}
 \begin{equation*}
 \begin{split}
-  \texttt{sl\_fc}\qty(\pi, \vb*{\xi}^{\pi}) = \\
-  \hyptangent
-  f_{\sigma \rightarrow \vb*{\xi}^\pi}
-  \hyptangent^{-1}
+  \text{Pr}\qty(\pi, \vb*{\xi}^{\pi}) = \\
+  \frac{1}{Z_{\pi \cup C}} \exp\Bigg\{-f_{\vb*{\xi}^\pi \leftarrow \sigma}
   \text{corr}_{\vb*{\eta}} \Bigg[ &
             \text{corr}_t\qty\Big[ \;
                        \mathbb{E}_{\qty|\vb*{\xi}^{\sigma\pi}| \in \sigma} B^{\pi}(\vb*{\xi}^{\sigma\pi}, t), \; 
@@ -24,10 +22,10 @@
             \text{corr}_t\qty\Big[ \; 
                        \mathbb{E}_{\qty|\vb*{\xi}^{\sigma\gamma}| \in \sigma} B^\gamma(\vb*{\xi}^{\sigma\gamma}, t), \;
                        B^\gamma(\vb*{\eta}^\gamma, t) ]
-            \Bigg] 
+            \Bigg] \Bigg\}
 \end{split}            
 \end{equation*}
-is a functional connectivity, expressed as a correlation tensor for patient or subject $\pi$ at parenchymal voxels positions $\vb*{\xi}^{\pi}$. \\
+is the probability that the functional connectivity of patient or subject $\pi$, at parenchymal voxels positions $\vb*{\xi}^{\pi}$, is dissimilar from the functional connectivity of a control cohort $C$. \\
 
 For patient or subject $\pi$, the BOLD times-series for parenchymal voxels, $\vb*{\xi}$, enclosed by sphere $\sigma \in$ set $S$, which spans the parenchyma, is $B^\pi\qty(\vb*{\xi}^{\sigma\pi}, t)$.  The expectation over those $\sigma$ voxels, $\mathbb{E}_{\qty|\vb*{\xi}^{\sigma\pi}| \in \sigma}$, aims to provide nonlocal aggregation of functional information.  The BOLD time-series for cortical voxels, $\vb*{\eta}$, is $B^\pi\qty(\vb*{\eta}^\pi, t)$.  The correlation matrix contracted over times, $t$, has size $\qty|S| \times \qty|\vb*{\eta^\pi}|$\\
 
@@ -35,7 +33,7 @@ Similarly, for each subject $\gamma \in$ control cohort $C$, the BOLD times-seri
 
 The outermost corr$_{\vb*{\eta}}$ contracts over all cortical voxels $\vb*{\eta}^\pi$ for the single subject with all cortical voxels $\vb*{\eta}^\gamma$ which have already been averaged over the control cohort, producing a correlation vector of length $\qty|S|$.  \\
 
-The outermost tanh $f_{\sigma \rightarrow \vb*{\xi}^\pi}$ tanh$^{-1}$ surjectively maps all spheres back to parenchymal voxels positions, thereby producing for each parenchymal $\xi^\pi$ a measure of similarity of the FC of patient or subject $\pi$ with all subjects from the control cohort $C$.
+The outermost $f_{\sigma \rightarrow \vb*{\xi}^\pi}$ surjectively maps all spheres back to parenchymal voxels positions, thereby producing for each parenchymal $\xi^\pi$ a measure of similarity of the FC of patient or subject $\pi$ with all subjects from the control cohort $C$.  Low or negative similarity increases the softmax probability of dissimilarity over the ensemble of $\pi \cup C$.
 
 
 

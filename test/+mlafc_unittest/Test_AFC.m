@@ -28,7 +28,23 @@ classdef Test_AFC < matlab.unittest.TestCase
     end
 
 	methods (Test)
-        function test_makeDice(this)            
+        function test_makeSoftmax(this)            
+            setenv('WORK', this.WORK)
+            cd(this.WORK)
+            testObj = mlafc.AFC();
+            pts = {'PT15' 'PT26' 'PT28' 'PT34' 'PT35' 'PT36'};
+            for ip = 1:length(pts)
+                pdir = fullfile(getenv('WORK'), pts{ip}, '');
+                pwd0 = pushd(pdir);
+                testObj = testObj.makeSoftmax(pdir, pts{ip});
+                testObj.product.fsleyes()
+                testObj.product.save()
+                testObj.product.nifti.save()
+                popd(pwd0)
+            end
+            
+        end
+        function test_makeDice(this)
             setenv('WORK', this.WORK)
             cd(this.WORK)
             testObj = mlafc.EmilysAFC();
