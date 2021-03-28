@@ -270,7 +270,7 @@ classdef EmilysAFC < mlafc.AFC
                 popd(pwd0)
             end
         end
-        function calc_jsdiv(varargin)
+        function calc_kldiv(varargin)
             ip = inputParser;
             addOptional(ip, 'toglob', 'PT*', @ischar)
             parse(ip, varargin{:})
@@ -283,8 +283,26 @@ classdef EmilysAFC < mlafc.AFC
                 seg = mlfourd.ImagingContext2(segmentation{1});
                 afc_prob = mlfourd.ImagingContext2([g{1} '_afc_prob_111.nii.gz']);
                 msk = logical(afc_prob);
-                jsdiv = afc_prob.jsdiv(seg, msk);
-                fprintf('jsdiv(%s) = %g\n',afc_prob.fileprefix, jsdiv)
+                kldiv = afc_prob.kldiv(seg, msk);
+                fprintf('jsdiv(%s) = %g\n',afc_prob.fileprefix, kldiv)
+                
+                popd(pwd0)
+            end
+        end
+        function calc_var(varargin)
+            ip = inputParser;
+            addOptional(ip, 'toglob', 'PT*', @ischar)
+            parse(ip, varargin{:})
+            ipr = ip.Results;
+                        
+            for g = globFoldersT(ipr.toglob)
+                pwd0 = pushd(g{1});
+                
+                afc_prob = mlfourd.ImagingContext2([g{1} '_afc_prob_111.nii.gz']);
+                msk = logical(afc_prob);
+                v = var(afc_prob.nifti.img(msk));
+                fprintf('var(%s) = %g\n',afc_prob.fileprefix, v)
+                fprintf('std(%s) = %g\n',afc_prob.fileprefix, sqrt(v))
                 
                 popd(pwd0)
             end
