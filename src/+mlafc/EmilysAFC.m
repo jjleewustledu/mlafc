@@ -131,6 +131,63 @@ classdef EmilysAFC < mlafc.AFC
                 popd(pwd0)
             end
         end
+        function buildFCToResection(varargin)
+            import mlafc.EmilysAFC.applyxfm
+            
+            ip = inputParser;
+            addOptional(ip, 'toglob', 'PT*', @ischar)
+            parse(ip, varargin{:})
+            ipr = ip.Results;            
+            
+            atl = mlfourd.ImagingContext2(fullfile(getenv('REFDIR'), '711-2B_333.nii.gz'));
+            gm3d = mlfourd.ImagingContext2(fullfile(getenv('REFDIR'), 'gm3d_and_cerebellum.nii.gz'));
+            gmbin = reshape(logical(gm3d), [48*64*48 1]);
+            Ngm = dipsum(gmbin); % ~ 51856
+            
+            for g = globFoldersT(ipr.toglob)
+                pwd0 = pushd(g{1});
+                
+                segfn = globT([g{1} '_*_segmentation_final_111.nii.gz']);
+                seg = mlfourd.ImagingContext2(segfn{1});
+                mat1to3 = fullfile(getenv('REFDIR'), '711-2B_111_on_333.mat');
+                seg = applyxfm(seg, mat1to3, [g{1} '_segmentation_final_333'], atl);
+                seg.fsleyes([g{1} '_anat_ave_t88_333.nii.gz'])
+                segbin = logical(seg);
+                segbin = flip(segbin, 2);
+                segbin = reshape(segbin, [48*64*48 1]); 
+                
+                mat = load(fullfile('/Users/jjlee/Box/DeepNetFCProject/Epilepsy/NoiseInjection', ...
+                                    g{1}, ...
+                                    [g{1} '_BOLD.mat']));
+                
+                seed = mean(mat.dat(segbin,:), 1); % 1 x Nt
+                
+                dat = mat.dat(gmbin,:); % Ngm x Nt
+                imgfc = zeros(Ngm, 1);
+                imgpval = zeros(Ngm, 1);
+                for p = 1:Ngm
+                    [cc,pval] = corrcoef(seed', dat(p,:)'); % col vec, col vec
+                    imgfc(p) = cc(1,2);
+                    imgpval(p) = pval(1,2);
+                end
+                fc = copy(atl.zeros);
+                fc.filepath = pwd;
+                fc.fileprefix = [g{1} '_fc_to_resection'];
+                fc = fc.nifti;
+                fc.img(gmbin) = imgfc;
+                fc.fsleyes()
+                fc.save()
+                pval = copy(atl.zeros);
+                pval.filepath = pwd;
+                pval.fileprefix = [g{1} '_pval_to_resection'];
+                pval = pval.nifti;
+                pval.img(gmbin) = imgpval;
+                pval.fsleyes()
+                pval.save()
+                
+                popd(pwd0)
+            end
+        end
         function buildSoftmaxOnResection(varargin)
             ip = inputParser;
             addOptional(ip, 'toglob', 'PT*', @ischar)
@@ -235,12 +292,15 @@ classdef EmilysAFC < mlafc.AFC
                 segmentation = globT([g{1} '_*_segmentation_final_111.nii.gz']);
                 seg = mlfourd.ImagingContext2(segmentation{1});
                 afc_prob = mlfourd.ImagingContext2([g{1} '_afc_prob_111.nii.gz']);
-                pr = afc_prob.nifti.img;
-                pr = pr(pr > 0);
-                thr = median(pr);
-                afc_prob = afc_prob.thresh(thr);
-                d = afc_prob.dice(seg);
-                fprintf('dice(%s) = %g; median = %g; mean = %g\n',afc_prob.fileprefix, d, median(pr), mean(pr))
+                gm = mlfourd.ImagingContext2(fullfile(getenv('REFDIR'), 'gm3d_111.nii.gz')); % no cerebellum
+                gm = gm.masked(double(afc_prob.numgt(0.008))); % 0.008 is the left tail of histograms
+%                thr = 0.00891826; % mean of modes for Engel I, II
+%                afc_prob = afc_prob.thresh(thr);
+                d = afc_prob.dice(seg, gm);
+                d = d.nifti.img;
+                fprintf('dice(%s) = %g\n', afc_prob.fileprefix, d)
+                pr = afc_prob.nifti.img(logical(gm));
+                fprintf('mode(%s) = %g\n', afc_prob.fileprefix, mode(pr))
                 
                 popd(pwd0)
             end
@@ -254,11 +314,19 @@ classdef EmilysAFC < mlafc.AFC
             for g = globFoldersT(ipr.toglob)
                 pwd0 = pushd(g{1});
                 
-                afc_prob = mlfourd.ImagingContext2([g{1} '_afc_prob_111.nii.gz']);
+                afc_prob = mlfourd.ImagingContext2([g{1} '_afc_prob_111.nii.gz']);                
+                afc_prob = afc_prob.thresh(0.001);
                 h = figure;
-                histogram(afc_prob)
-                xlabel('probability of dissimilarity')
-                ylabel('number of voxels')
+                histo = histogram(afc_prob, 'DisplayStyle', 'stairs', 'LineWidth', 2);
+                ax = gca;
+                ax.XRuler.Exponent = 0;
+                xtickformat('%.3f')
+                set(gca, 'fontsize', 12)
+                xlabel('probability dissimilarity', 'FontSize', 18)
+                ylabel('number voxels', 'FontSize', 18)
+                m = mode(afc_prob.nifti.img(logical(afc_prob)));
+                s = sprintf('mode = %.4f\nfull width half max = %.4f', m, fwhm(histo)); 
+                annotation('textbox', [0.16 .2 .5 0.1], 'String', s, 'FitBoxToText', 'on', 'FontSize', 16, 'LineStyle', 'none')
                 
                 savefig(h, ...
                     sprintf('EmilysAFC_calc_histogram_%s_afc_prob_111.fig', g{1}))
@@ -269,8 +337,15 @@ classdef EmilysAFC < mlafc.AFC
                 
                 popd(pwd0)
             end
+
+            function w = fwhm(histo)
+                hh = 0.5 * (max(histo.Values) - min(histo.Values));
+                idx1 = find(histo.Values >= hh, 1, 'first');
+                idx2 = find(histo.Values >= hh, 1, 'last');
+                w = histo.BinEdges(idx2) - histo.BinEdges(idx1);
+            end
         end
-        function calc_kldiv(varargin)
+        function calc_jsdiv(varargin)
             ip = inputParser;
             addOptional(ip, 'toglob', 'PT*', @ischar)
             parse(ip, varargin{:})
@@ -282,9 +357,40 @@ classdef EmilysAFC < mlafc.AFC
                 segmentation = globT([g{1} '_*_segmentation_final_111.nii.gz']);
                 seg = mlfourd.ImagingContext2(segmentation{1});
                 afc_prob = mlfourd.ImagingContext2([g{1} '_afc_prob_111.nii.gz']);
-                msk = logical(afc_prob);
-                kldiv = afc_prob.kldiv(seg, msk);
-                fprintf('jsdiv(%s) = %g\n',afc_prob.fileprefix, kldiv)
+                gm = mlfourd.ImagingContext2(fullfile(getenv('REFDIR'), 'gm3d_111.nii.gz')); % no cerebellum
+%                gm = gm.masked(double(afc_prob.numgt(0.008))); % 0.008 is the left tail of histograms                
+                jsdiv = afc_prob.jsdiv(seg, gm);
+                fprintf('jsdiv(%s) = %g\n',afc_prob.fileprefix, jsdiv)
+                
+                popd(pwd0)
+            end
+        end
+        function calc_perfcurve(varargin)
+            ip = inputParser;
+            addOptional(ip, 'toglob', 'PT*', @ischar)
+            parse(ip, varargin{:})
+            ipr = ip.Results;
+                        
+            for g = globFoldersT(ipr.toglob)
+                pwd0 = pushd(g{1});
+                
+                segmentation = globT([g{1} '_*_segmentation_final_111.nii.gz']);
+                seg = mlfourd.ImagingContext2(segmentation{1});
+                afc_prob = mlfourd.ImagingContext2([g{1} '_afc_prob_111.nii.gz']);
+                gm = mlfourd.ImagingContext2(fullfile(getenv('REFDIR'), 'gm3d_111.nii.gz')); % no cerebellum
+                msk = logical(gm);
+                                
+                seg_ = double(seg.nifti.img(msk));
+                afc_prob_ = double(afc_prob.nifti.img(msk));
+                [x,y,t,auc,OPTROCPT] = perfcurve(seg_, afc_prob_, 1);
+                plot(x,y)
+                hold on
+                plot(OPTROCPT(1),OPTROCPT(2),'ro')
+                xlabel('False positive rate') 
+                ylabel('True positive rate')
+                title(sprintf('ROC Curve for %s\nAUC = %g', ...
+                              afc_prob.fileprefix, auc))
+                hold off
                 
                 popd(pwd0)
             end
@@ -299,8 +405,7 @@ classdef EmilysAFC < mlafc.AFC
                 pwd0 = pushd(g{1});
                 
                 afc_prob = mlfourd.ImagingContext2([g{1} '_afc_prob_111.nii.gz']);
-                msk = logical(afc_prob);
-                v = var(afc_prob.nifti.img(msk));
+                v = var(afc_prob.nifti.img(logical(afc_prob.numgt(0.001))));
                 fprintf('var(%s) = %g\n',afc_prob.fileprefix, v)
                 fprintf('std(%s) = %g\n',afc_prob.fileprefix, sqrt(v))
                 
@@ -365,13 +470,98 @@ classdef EmilysAFC < mlafc.AFC
                 edge_seg = mlfourd.ImagingFormatContext(segmentation{1});
                 edge_seg.img = edge3(edge_seg.img, 'approxcanny', 0.2);
                 edge_seg.fileprefix = [strrep(segmentation{1}, '.nii.gz', '') '_edge'];
-                edge_seg.save()
+%                edge_seg.save()
                 
                 qc = mlfourd.ImagingContext2([g{1} '_afc_prob_111.nii.gz']);
                 qc.fsleyes(resection{1}, edge_seg.filename)
                 
                 popd(pwd0)
             end
+        end
+        
+        %% UTILITIES
+        
+        function ic = bet(ic0, betFrac)
+            bin = fullfile(getenv('FSLDIR'), 'bin', 'bet');
+            if contains(ic0.fileprefix, 'mpr')
+                t2_fqfp = strrep(ic0.fqfp, 'mpr1', 't2w');
+                assert(isfile([t2_fqfp '.nii.gz']))
+                mlbash(sprintf('%s %s %s_brain -A2 %s -f %g -g 0 -m', bin, ic0.fqfp, ic0.fqfp, t2_fqfp, betFrac))
+                BET = fullfile(ic0.filepath, 'BET', '');
+                ensuredir(BET)
+                movefile(fullfile(ic0.filepath, '*_mask.*'), BET, 'f')
+                movefile(fullfile(ic0.filepath, '*_mesh.*'), BET, 'f')
+            else
+                mlbash(sprintf('%s %s %s_brain -R -f %i -g 0 -m', bin, ic0.fqfp, ic0.fqfp, betFrac))
+            end
+            ic = mlfourd.ImagingContext2([ic0.fqfp '_brain.nii.gz']);
+            ic.selectImagingFormatTool()
+        end
+        function ic = betZ(ic0, betFrac)
+            bin = fullfile(getenv('FSLDIR'), 'bin', 'bet');
+            mlbash(sprintf('%s %s %s_brain -Z -f %i -g 0 -m', bin, ic0.fqfp, ic0.fqfp, betFrac))
+            ic = mlfourd.ImagingContext2([ic0.fqfp '_brain.nii.gz']);
+            ic.selectImagingFormatTool()
+        end
+        function [ic,matfn] = flirt(dof, ic0, icref, out_fqfp)
+            assert(isnumeric(dof))
+            bin = fullfile(getenv('FSLDIR'), 'bin', 'flirt');
+            mlbash(sprintf('%s -in %s -ref %s -out %s -omat %s.mat -bins 256 -cost corratio -searchrx -90 90 -searchry -90 90 -searchrz -90 90 -dof %i -interp trilinear', bin, ic0.fqfp, icref.fqfp, out_fqfp, out_fqfp, dof))
+            %flirt -in PT15_4_FLIRT_111_brain.nii.gz -ref PT15_mpr1_111_brain.nii.gz -out PT15_4_FLIRT_on_mpr1_111_brain.nii.gz -omat PT15_4_FLIRT_on_mpr1_111_brain.mat -bins 256 -cost corratio -searchrx -90 90 -searchry -90 90 -searchrz -90 90 -dof 12  -interp trilinear
+            ic = mlfourd.ImagingContext2([out_fqfp '.nii.gz']);
+            ic.selectImagingFormatTool()
+            matfn = [out_fqfp '.mat'];
+        end
+        function ic = applyxfm(ic0, mat, out_fqfp, icref)
+            bin = fullfile(getenv('FSLDIR'), 'bin', 'flirt');
+            mlbash(sprintf('%s -in %s -applyxfm -init %s -out %s -paddingsize 0.0 -interp nearestneighbour -ref %s', bin, ic0.fqfp, mat, out_fqfp, icref.fqfp))
+            %flirt -in PT15_4_seg_111_nopriorsurg.nii.gz -applyxfm -init PT15_4_FLIRT_on_mpr1_111_brain.mat -out PT15_4_seg_111_nopriorsurg_on_mpr_111.nii.gz -paddingsize 0.0 -interp nearestneighbour -ref PT15_mpr1_on_TRIO_Y_NDC_111.nii.gz
+            ic = mlfourd.ImagingContext2([out_fqfp '.nii.gz']);
+            ic.selectImagingFormatTool()
+        end
+        function [icres,icseg] = antsToMprDeformed(icres0, icseg0)
+            %% see also:
+            %  https://github.com/ANTsX/ANTs/wiki/Forward-and-inverse-warps-for-warping-images,-pointsets-and-Jacobians
+            
+            [~,key] = fileparts(pwd);
+            syn = fullfile(getenv('ANTSPATH'), 'antsRegistrationSyNQuick.sh');
+            apply = fullfile(getenv('ANTSPATH'), 'antsApplyTransforms');
+            resfn = [key '_resection_toMprDeformed.nii.gz'];
+            segfn = [key '_seg_toMprDeformed.nii.gz'];
+            icmpr = mlfourd.ImagingContext2([key '_mpr1_on_TRIO_Y_NDC_111_brain.nii.gz']);
+            assert(isfile(icmpr.fqfn))
+            
+            mlbash(sprintf('%s -d 3 -f %s -m %s -o movingToMpr_ -t s', syn, icmpr.fqfn, icres0.fqfn))
+            mlbash(sprintf('%s -d 3 -i %s -r %s -t movingToMpr_1Warp.nii.gz -t movingToMpr_0GenericAffine.mat -o %s', apply, icres0.fqfn, icmpr.fqfn, resfn))
+            mlbash(sprintf('%s -d 3 -i %s -r %s -t movingToMpr_1Warp.nii.gz -t movingToMpr_0GenericAffine.mat -n GenericLabel -o %s', apply, icseg0.fqfn, icmpr.fqfn, segfn))
+            %antsRegistrationSyNQuick.sh -d 3 -f PT15_mpr1_on_TRIO_Y_NDC_111.nii.gz -m PT15_anat_ave_t88_333.nii.gz -o movingToFixed_ -t s
+            %antsApplyTransforms -d 3 -i PT15_resection_on_mpr_111.nii.gz -r PT15_anat_ave_t88_333.nii.gz -t [movingToFixed_0GenericAffine.mat, 1] -t movingToFixed_1InverseWarp.nii.gz -o PT15_4_FLIRT_toAnatDeformed.nii.gz
+            %antsApplyTransforms -d 3 -i PT15_seg_on_mpr_111.nii.gz -r PT15_anat_ave_t88_333.nii.gz -t [movingToFixed_0GenericAffine.mat, 1] -t movingToFixed_1InverseWarp.nii.gz -n GenericLabel -o PT15_4_seg_toAnatDeformed.nii.gz
+            icres = mlfourd.ImagingContext2(resfn);
+            icres.selectImagingFormatTool()
+            icseg = mlfourd.ImagingContext2(segfn);
+            icseg.selectImagingFormatTool()
+        end
+        function [icres,icseg] = antsToBoldDeformed(icres0, icseg0, icmpr, icbold)
+            %% see also:
+            %  https://github.com/ANTsX/ANTs/wiki/Forward-and-inverse-warps-for-warping-images,-pointsets-and-Jacobians
+            
+            [~,key] = fileparts(pwd);
+            syn = fullfile(getenv('ANTSPATH'), 'antsRegistrationSyNQuick.sh');
+            apply = fullfile(getenv('ANTSPATH'), 'antsApplyTransforms');
+            resfn = [key '_resection_toBoldDeformed.nii.gz'];
+            segfn = [key '_seg_toBoldDeformed.nii.gz'];
+            
+            mlbash(sprintf('%s -d 3 -f %s -m %s -o movingToMpr2_ -t s', syn, icmpr.fqfn, icbold.fqfn))
+            mlbash(sprintf('%s -d 3 -i %s -r %s -t [movingToMpr2_0GenericAffine.mat, 1] -t movingToMpr2_1InverseWarp.nii.gz -o %s', apply, icres0.fqfn, icbold.fqfn, resfn))
+            mlbash(sprintf('%s -d 3 -i %s -r %s -t [movingToMpr2_0GenericAffine.mat, 1] -t movingToMpr2_1InverseWarp.nii.gz -n GenericLabel -o %s', apply, icseg0.fqfn, icbold.fqfn, segfn))
+            %antsRegistrationSyNQuick.sh -d 3 -f PT15_mpr1_on_TRIO_Y_NDC_111.nii.gz -m PT15_anat_ave_t88_333.nii.gz -o movingToFixed_ -t s
+            %antsApplyTransforms -d 3 -i PT15_resection_on_mpr_111.nii.gz -r PT15_anat_ave_t88_333.nii.gz -t [movingToFixed_0GenericAffine.mat, 1] -t movingToFixed_1InverseWarp.nii.gz -o PT15_4_FLIRT_toAnatDeformed.nii.gz
+            %antsApplyTransforms -d 3 -i PT15_seg_on_mpr_111.nii.gz -r PT15_anat_ave_t88_333.nii.gz -t [movingToFixed_0GenericAffine.mat, 1] -t movingToFixed_1InverseWarp.nii.gz -n GenericLabel -o PT15_4_seg_toAnatDeformed.nii.gz
+            icres = mlfourd.ImagingContext2(resfn);
+            icres.selectImagingFormatTool();
+            icseg = mlfourd.ImagingContext2(segfn);
+            icseg.selectImagingFormatTool();
         end
     end
 
@@ -656,88 +846,6 @@ classdef EmilysAFC < mlafc.AFC
             popd(pwd0)
         end
         
-        function ic = bet(~, ic0, betFrac)
-            bin = fullfile(getenv('FSLDIR'), 'bin', 'bet');
-            if contains(ic0.fileprefix, 'mpr')
-                t2_fqfp = strrep(ic0.fqfp, 'mpr1', 't2w');
-                assert(isfile([t2_fqfp '.nii.gz']))
-                mlbash(sprintf('%s %s %s_brain -A2 %s -f %g -g 0 -m', bin, ic0.fqfp, ic0.fqfp, t2_fqfp, betFrac))
-                BET = fullfile(ic0.filepath, 'BET', '');
-                ensuredir(BET)
-                movefile(fullfile(ic0.filepath, '*_mask.*'), BET, 'f')
-                movefile(fullfile(ic0.filepath, '*_mesh.*'), BET, 'f')
-            else
-                mlbash(sprintf('%s %s %s_brain -R -f %i -g 0 -m', bin, ic0.fqfp, ic0.fqfp, betFrac))
-            end
-            ic = mlfourd.ImagingContext2([ic0.fqfp '_brain.nii.gz']);
-            ic.selectImagingFormatTool()
-        end
-        function ic = betZ(~, ic0, betFrac)
-            bin = fullfile(getenv('FSLDIR'), 'bin', 'bet');
-            mlbash(sprintf('%s %s %s_brain -Z -f %i -g 0 -m', bin, ic0.fqfp, ic0.fqfp, betFrac))
-            ic = mlfourd.ImagingContext2([ic0.fqfp '_brain.nii.gz']);
-            ic.selectImagingFormatTool()
-        end
-        function [ic,matfn] = flirt(~, dof, ic0, icref, out_fqfp)
-            assert(isnumeric(dof))
-            bin = fullfile(getenv('FSLDIR'), 'bin', 'flirt');
-            mlbash(sprintf('%s -in %s -ref %s -out %s -omat %s.mat -bins 256 -cost corratio -searchrx -90 90 -searchry -90 90 -searchrz -90 90 -dof %i -interp trilinear', bin, ic0.fqfp, icref.fqfp, out_fqfp, out_fqfp, dof))
-            %flirt -in PT15_4_FLIRT_111_brain.nii.gz -ref PT15_mpr1_111_brain.nii.gz -out PT15_4_FLIRT_on_mpr1_111_brain.nii.gz -omat PT15_4_FLIRT_on_mpr1_111_brain.mat -bins 256 -cost corratio -searchrx -90 90 -searchry -90 90 -searchrz -90 90 -dof 12  -interp trilinear
-            ic = mlfourd.ImagingContext2([out_fqfp '.nii.gz']);
-            ic.selectImagingFormatTool()
-            matfn = [out_fqfp '.mat'];
-        end
-        function ic = applyxfm(~, ic0, mat, out_fqfp, icref)
-            bin = fullfile(getenv('FSLDIR'), 'bin', 'flirt');
-            mlbash(sprintf('%s -in %s -applyxfm -init %s -out %s -paddingsize 0.0 -interp nearestneighbour -ref %s', bin, ic0.fqfp, mat, out_fqfp, icref.fqfp))
-            %flirt -in PT15_4_seg_111_nopriorsurg.nii.gz -applyxfm -init PT15_4_FLIRT_on_mpr1_111_brain.mat -out PT15_4_seg_111_nopriorsurg_on_mpr_111.nii.gz -paddingsize 0.0 -interp nearestneighbour -ref PT15_mpr1_on_TRIO_Y_NDC_111.nii.gz
-            ic = mlfourd.ImagingContext2([out_fqfp '.nii.gz']);
-            ic.selectImagingFormatTool()
-        end
-        function [icres,icseg] = antsToMprDeformed(~, icres0, icseg0)
-            %% see also:
-            %  https://github.com/ANTsX/ANTs/wiki/Forward-and-inverse-warps-for-warping-images,-pointsets-and-Jacobians
-            
-            [~,key] = fileparts(pwd);
-            syn = fullfile(getenv('ANTSPATH'), 'antsRegistrationSyNQuick.sh');
-            apply = fullfile(getenv('ANTSPATH'), 'antsApplyTransforms');
-            resfn = [key '_resection_toMprDeformed.nii.gz'];
-            segfn = [key '_seg_toMprDeformed.nii.gz'];
-            icmpr = mlfourd.ImagingContext2([key '_mpr1_on_TRIO_Y_NDC_111_brain.nii.gz']);
-            assert(isfile(icmpr.fqfn))
-            
-            mlbash(sprintf('%s -d 3 -f %s -m %s -o movingToMpr_ -t s', syn, icmpr.fqfn, icres0.fqfn))
-            mlbash(sprintf('%s -d 3 -i %s -r %s -t movingToMpr_1Warp.nii.gz -t movingToMpr_0GenericAffine.mat -o %s', apply, icres0.fqfn, icmpr.fqfn, resfn))
-            mlbash(sprintf('%s -d 3 -i %s -r %s -t movingToMpr_1Warp.nii.gz -t movingToMpr_0GenericAffine.mat -n GenericLabel -o %s', apply, icseg0.fqfn, icmpr.fqfn, segfn))
-            %antsRegistrationSyNQuick.sh -d 3 -f PT15_mpr1_on_TRIO_Y_NDC_111.nii.gz -m PT15_anat_ave_t88_333.nii.gz -o movingToFixed_ -t s
-            %antsApplyTransforms -d 3 -i PT15_resection_on_mpr_111.nii.gz -r PT15_anat_ave_t88_333.nii.gz -t [movingToFixed_0GenericAffine.mat, 1] -t movingToFixed_1InverseWarp.nii.gz -o PT15_4_FLIRT_toAnatDeformed.nii.gz
-            %antsApplyTransforms -d 3 -i PT15_seg_on_mpr_111.nii.gz -r PT15_anat_ave_t88_333.nii.gz -t [movingToFixed_0GenericAffine.mat, 1] -t movingToFixed_1InverseWarp.nii.gz -n GenericLabel -o PT15_4_seg_toAnatDeformed.nii.gz
-            icres = mlfourd.ImagingContext2(resfn);
-            icres.selectImagingFormatTool()
-            icseg = mlfourd.ImagingContext2(segfn);
-            icseg.selectImagingFormatTool()
-        end
-        function [icres,icseg] = antsToBoldDeformed(~, icres0, icseg0, icmpr, icbold)
-            %% see also:
-            %  https://github.com/ANTsX/ANTs/wiki/Forward-and-inverse-warps-for-warping-images,-pointsets-and-Jacobians
-            
-            [~,key] = fileparts(pwd);
-            syn = fullfile(getenv('ANTSPATH'), 'antsRegistrationSyNQuick.sh');
-            apply = fullfile(getenv('ANTSPATH'), 'antsApplyTransforms');
-            resfn = [key '_resection_toBoldDeformed.nii.gz'];
-            segfn = [key '_seg_toBoldDeformed.nii.gz'];
-            
-            mlbash(sprintf('%s -d 3 -f %s -m %s -o movingToMpr2_ -t s', syn, icmpr.fqfn, icbold.fqfn))
-            mlbash(sprintf('%s -d 3 -i %s -r %s -t [movingToMpr2_0GenericAffine.mat, 1] -t movingToMpr2_1InverseWarp.nii.gz -o %s', apply, icres0.fqfn, icbold.fqfn, resfn))
-            mlbash(sprintf('%s -d 3 -i %s -r %s -t [movingToMpr2_0GenericAffine.mat, 1] -t movingToMpr2_1InverseWarp.nii.gz -n GenericLabel -o %s', apply, icseg0.fqfn, icbold.fqfn, segfn))
-            %antsRegistrationSyNQuick.sh -d 3 -f PT15_mpr1_on_TRIO_Y_NDC_111.nii.gz -m PT15_anat_ave_t88_333.nii.gz -o movingToFixed_ -t s
-            %antsApplyTransforms -d 3 -i PT15_resection_on_mpr_111.nii.gz -r PT15_anat_ave_t88_333.nii.gz -t [movingToFixed_0GenericAffine.mat, 1] -t movingToFixed_1InverseWarp.nii.gz -o PT15_4_FLIRT_toAnatDeformed.nii.gz
-            %antsApplyTransforms -d 3 -i PT15_seg_on_mpr_111.nii.gz -r PT15_anat_ave_t88_333.nii.gz -t [movingToFixed_0GenericAffine.mat, 1] -t movingToFixed_1InverseWarp.nii.gz -n GenericLabel -o PT15_4_seg_toAnatDeformed.nii.gz
-            icres = mlfourd.ImagingContext2(resfn);
-            icres.selectImagingFormatTool();
-            icseg = mlfourd.ImagingContext2(segfn);
-            icseg.selectImagingFormatTool();
-        end
     end
 
 	%  Created with Newcl by John J. Lee after newfcn by Frank Gonzalez-Morphy
