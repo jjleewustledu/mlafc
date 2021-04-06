@@ -6,6 +6,15 @@ classdef AFCRegistry < handle & mlpark.ParkRegistry
  	%  last modified $LastChangedDate$ and placed into repository /Users/jjlee/MATLAB-Drive/mlafc/src/+mlafc.
  	%% It was developed on Matlab 9.5.0.1067069 (R2018b) Update 4 for MACI64.  Copyright 2019 John Joowon Lee.
  	
+    properties
+        sphere_radius
+        grid_spacing
+        min_num_vox
+        ref_count = 100
+        tag = ''
+        tanh_sandwich
+    end
+    
 	properties (Dependent)
         afc_map_mat
         Hacker_Data_ALL
@@ -14,10 +23,10 @@ classdef AFCRegistry < handle & mlpark.ParkRegistry
         mlp_rmse_con100
         perceptron_uout_resid_mat
         perceptron_resid_mat
-        ref_count
         ref_resid_mat
  		sl_fc_gsp_mat
         sl_fc_mean_mat
+        tanh_tag
  	end
 
     methods (Static)
@@ -96,17 +105,25 @@ classdef AFCRegistry < handle & mlpark.ParkRegistry
         function g = get.perceptron_resid_mat(~)
             g = '_faln_dbnd_xr3d_atl_g7_bpss_resid.mat';
         end
-        function g = get.ref_count(~)
-            g = 100;
-        end
         function g = get.ref_resid_mat(~)
             g = '_faln_dbnd_xr3d_atl_g7_bpss_resid.mat';
         end
-        function g = get.sl_fc_gsp_mat(~)
-            g = fullfile(getenv('WORK'), 'sl_fc_gsp.mat');
+        function g = get.sl_fc_gsp_mat(this)
+            g = fullfile(getenv('WORK'), ...
+                sprintf('sl_fc_gsp_radius%i_stride%i_N%i%s%s.mat', ...
+                this.sphere_radius, this.grid_spacing, this.ref_count, this.tanh_tag, this.tag));
         end
-        function g = get.sl_fc_mean_mat(~)
-            g = fullfile(getenv('WORK'), 'sl_fc_mean.mat');
+        function g = get.sl_fc_mean_mat(this)
+            g = fullfile(getenv('WORK'), ...
+                sprintf('sl_fc_mean_radius%i_stride%i_N%i%s%s.mat', ...
+                this.sphere_radius, this.grid_spacing, this.ref_count, this.tanh_tag, this.tag));
+        end
+        function g = get.tanh_tag(this)
+            if this.tanh_sandwich
+                g = '_tanh_sandwich';
+            else
+                g = '';
+            end
         end
     end
     
