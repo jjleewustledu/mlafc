@@ -151,7 +151,7 @@ classdef EmilysAFC < mlafc.AFC
                 seg = mlfourd.ImagingContext2(segfn{1});
                 mat1to3 = fullfile(getenv('REFDIR'), '711-2B_111_on_333.mat');
                 seg = applyxfm(seg, mat1to3, [g{1} '_segmentation_final_333'], atl);
-                seg.fsleyes([g{1} '_anat_ave_t88_333.nii.gz'])
+%                seg.fsleyes([g{1} '_anat_ave_t88_333.nii.gz'])
                 segbin = logical(seg);
                 segbin = flip(segbin, 2);
                 segbin = reshape(segbin, [48*64*48 1]); 
@@ -164,26 +164,17 @@ classdef EmilysAFC < mlafc.AFC
                 
                 dat = mat.dat(gmbin,:); % Ngm x Nt
                 imgfc = zeros(Ngm, 1);
-                imgpval = zeros(Ngm, 1);
                 for p = 1:Ngm
                     [cc,pval] = corrcoef(seed', dat(p,:)'); % col vec, col vec
-                    imgfc(p) = cc(1,2);
-                    imgpval(p) = pval(1,2);
+                    imgfc(p) = atanh(cc(1,2));
                 end
                 fc = copy(atl.zeros);
                 fc.filepath = pwd;
-                fc.fileprefix = [g{1} '_fc_to_resection'];
+                fc.fileprefix = [g{1} '_fc_to_resection_arctanh'];
                 fc = fc.nifti;
                 fc.img(gmbin) = imgfc;
                 fc.fsleyes()
                 fc.save()
-                pval = copy(atl.zeros);
-                pval.filepath = pwd;
-                pval.fileprefix = [g{1} '_pval_to_resection'];
-                pval = pval.nifti;
-                pval.img(gmbin) = imgpval;
-                pval.fsleyes()
-                pval.save()
                 
                 popd(pwd0)
             end
