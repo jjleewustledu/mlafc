@@ -336,8 +336,8 @@ classdef AFC
             g = mlperceptron.PerceptronRegistry.read_MNI152_T1_0p5mm();
         end
         function g = get.product(this)
-            reg = mlperceptron.PerceptronRegistry.instance();
-            [d1,d2,d3] = reg.atlas_dims;
+            perreg = mlperceptron.PerceptronRegistry.instance();
+            [d1,d2,d3] = perreg.atlas_dims;
             img = reshape(this.afc_map, [d1 d2 d3]);
             img(isnan(img)) = 0;
             warning('mlafc:RuntimeWarning', ...
@@ -358,13 +358,10 @@ classdef AFC
             g = this.similarityKind_;
         end
         function g = get.sv(this)
-            if isempty(this.sv_)
-                this = this.SL_fMRI_initialization();
-            end
             g = this.sv_;
         end
         
-        %%
+        %%        
         
         function plotIntersubjectVariability(this)
             
@@ -376,7 +373,7 @@ classdef AFC
             
             %% MLP AFC
             numsub = 150;
-            MLP_GTM_150 = this.registry.gtm_y; % GTM_y(:,:,1:numsub);
+            MLP_GTM_150 = this.gtm_y; % GTM_y(:,:,1:numsub);
             
             ind = 1;
             for sub1 = 1:numsub
@@ -448,6 +445,13 @@ classdef AFC
             %  @returns inputParser.Results.
             %  @returns softmax in product cast as ImagingContext2.
             
+            if this.registry.tanh_sandwich
+                [this,ipr] = this.makeSoftmax_tanh_atanh__(varargin{:});
+            else
+                [this,ipr] = this.makeSoftmax__(varargin{:});
+            end
+        end
+        function [this,ipr] = makeSoftmax_tanh_atanh__(this, varargin)
             import mlperceptron.PerceptronFromFormat
             import mlpark.SearchLight
             import mlpark.*
@@ -463,10 +467,6 @@ classdef AFC
             disp(ipr)
             this.patientdir = ipr.patientdir;
             this.patientid = ipr.patientid;
-            
-            %% using results of SL_fMRI_initialization            
-            
-            this.sv_ = this.sv;
             
             %% using results of mlperceptron.PerceptronRelease factory                   
             
@@ -487,35 +487,105 @@ classdef AFC
             end 
             fprintf('makeSearchlightMap.bold_frames.size -> %s\n', mat2str(size(bold_frames)))
             
-            sl_fc = zeros(length(this.sv), sum(this.GMmsk_for_glm_), class(bold_frames));
-            for ind = 1:length(this.sv) % EXPENSIVE without prealloc; 1:2825
-                sphere_vox = this.sv{ind}; % 13 x 1
-                bf_sv = nanmean(bold_frames(:, sphere_vox), 2);
-                sl_fc(ind, :) = this.similarity(bf_sv, bold_frames(:, find(this.GMmsk_for_glm_)), 'kind', 'ch');
+            similarity__ = @this.similarity;
+            sv__ = this.sv;
+            Nsv__ = length(sv__);
+            GMmsk_for_glm__ = this.GMmsk_for_glm_;
+            found_GMmsk_for_glm = find(this.GMmsk_for_glm_); % 18611 x 1
+            N_GMmask_for_glm = length(this.GMmsk_for_glm_);
+            
+            sl_fc = zeros(Nsv__, sum(GMmsk_for_glm__), class(bold_frames));
+            parfor isv = 1:Nsv__ % EXPENSIVE without prealloc; 1:2825
+                sphere_vox = sv__{isv}; % 13 x 1
+                bf_sv = nanmean(bold_frames(:, sphere_vox), 2); %#ok<PFBNS>
+                sl_fc(isv, :) = similarity__(bf_sv, bold_frames(:, found_GMmsk_for_glm), 'kind', 'ch');
                 % sl_fc is 2825 x 18611, |spheres| x |found gray-matter voxels|
-                
-                if 0 == mod(ind, 100)
-                    fprintf('makeSearchlightMap:  assigned sphere_vox for index %i of %i\n', ind, length(this.sv))
-                end
             end
             
-            r = this.similarity(sl_fc, this.sl_fc_mean_); % 1 x 2825 <= 2825 x 18611, 2825 x 18611
-            
-            r_glm = zeros(1, length(this.GMmsk_for_glm_)); % 1 x 65549
-            count = zeros(1, length(this.GMmsk_for_glm_)); % 1 x 65549            
-            for ind = 1:length(this.sv)                
-                temp = zeros(1, length(this.GMmsk_for_glm_)); 
-                temp(this.sv{ind}) = atanh(r(ind)); 
-                counttemp = zeros(1, length(this.GMmsk_for_glm_));
-                counttemp(this.sv{ind}) = 1;
-                r_glm = r_glm + temp; 
-                count = count + counttemp;
-                
-                if 0 == mod(ind, 100)
-                    fprintf('makeSearchlightMap:  assigned count for index %i of %i\n', ind, length(this.sv))
-                end                
+            r = this.similarity(sl_fc, this.sl_fc_mean_); % 1 x 2825 <= 2825 x 18611, 2825 x 18611            
+            r_glm = zeros(Nsv__, N_GMmask_for_glm); % 1 x 65549
+            count = zeros(Nsv__, N_GMmask_for_glm); % 1 x 65549            
+            parfor isv = 1:Nsv__               
+                sphere_vox = sv__{isv};
+                r_glm_inc = zeros(1, N_GMmask_for_glm); 
+                r_glm_inc(sphere_vox) = atanh(r(isv)); 
+                r_glm(isv,:) = r_glm_inc; 
+                count_inc = zeros(1, N_GMmask_for_glm);
+                count_inc(sphere_vox) = 1;
+                count(isv,:) = count_inc;               
             end            
-            energy_pi = tanh(r_glm./count); % 1 x 65549
+            energy_pi = tanh(sum(r_glm,1)./sum(count,1)); % 1 x 65549
+            prob_pi = exp(-energy_pi);
+            
+            probs = exp(-this.sl_fc_gsp_); % 100 x 65549
+            probs(size(probs,1)+1,:) = prob_pi;
+            this.afc_map = prob_pi ./ sum(probs, 1); 
+            this.afc_map = this.maskedVecToFullVec(this.afc_map); % 1 x 147456
+        end
+        function [this,ipr] = makeSoftmax__(this, varargin)
+            import mlperceptron.PerceptronFromFormat
+            import mlpark.SearchLight
+            import mlpark.*
+            
+            ip = inputParser;
+            ip.KeepUnmatched = true;
+            addRequired( ip, 'patientdir', @isfolder)
+            addRequired( ip, 'patientid', @ischar)
+            addParameter(ip, 'afc_filename', ['AFC_this_' datestr(now, 30) '.mat'], @ischar)
+            addParameter(ip, 'Nframes', [], @isnumeric)
+            parse(ip, varargin{:})
+            ipr = ip.Results;             
+            disp(ipr)
+            this.patientdir = ipr.patientdir;
+            this.patientid = ipr.patientid;
+            
+            %% using results of mlperceptron.PerceptronRelease factory                   
+            
+            PerceptronFromFormat.createProbMaps(this.patientdir, this.patientid)
+            
+            %% 
+
+            try
+                load(fullfile(this.patientdir, 'Perceptron', sprintf('%s%s', this.patientid, this.registry.perceptron_resid_mat)), 'bold_frames')
+            catch ME
+                handwarning(ME)
+                load(fullfile(this.patientdir, 'Perceptron', sprintf('%s%s', this.patientid, this.registry.perceptron_uout_resid_mat)), 'bold_frames')
+            end
+            % bold_frames is 2307 x 65549 single, time-samples x parenchyma voxels; N_times is variable across studies
+            
+            if ~isempty(ipr.Nframes)
+                bold_frames = bold_frames(1:ipr.Nframes, :);
+            end 
+            fprintf('makeSearchlightMap.bold_frames.size -> %s\n', mat2str(size(bold_frames)))
+            
+            similarity__ = @this.similarity;
+            sv__ = this.sv;
+            Nsv__ = length(sv__);
+            GMmsk_for_glm__ = this.GMmsk_for_glm_;
+            found_GMmsk_for_glm = find(this.GMmsk_for_glm_); % 18611 x 1
+            N_GMmask_for_glm = length(this.GMmsk_for_glm_);
+            
+            sl_fc = zeros(Nsv__, sum(GMmsk_for_glm__), class(bold_frames));
+            parfor isv = 1:Nsv__ % EXPENSIVE without prealloc; 1:2825
+                sphere_vox = sv__{isv}; % 13 x 1
+                bf_sv = nanmean(bold_frames(:, sphere_vox), 2); %#ok<PFBNS>
+                sl_fc(isv, :) = similarity__(bf_sv, bold_frames(:, found_GMmsk_for_glm), 'kind', 'ch');
+                % sl_fc is 2825 x 18611, |spheres| x |found gray-matter voxels|
+            end
+            
+            r = this.similarity(sl_fc, this.sl_fc_mean_); % 1 x 2825 <= 2825 x 18611, 2825 x 18611            
+            r_glm = zeros(Nsv__, N_GMmask_for_glm); % 1 x 65549
+            count = zeros(Nsv__, N_GMmask_for_glm); % 1 x 65549            
+            parfor isv = 1:Nsv__               
+                sphere_vox = sv__{isv};
+                r_glm_inc = zeros(1, N_GMmask_for_glm); 
+                r_glm_inc(sphere_vox) = r(isv); 
+                r_glm(isv,:) = r_glm_inc; 
+                count_inc = zeros(1, N_GMmask_for_glm);
+                count_inc(sphere_vox) = 1;
+                count(isv,:) = count_inc;               
+            end            
+            energy_pi = sum(r_glm,1)./sum(count,1); % 1 x 65549
             prob_pi = exp(-energy_pi);
             
             probs = exp(-this.sl_fc_gsp_); % 100 x 65549
@@ -550,10 +620,6 @@ classdef AFC
             disp(ipr)
             this.patientdir = ipr.patientdir;
             this.patientid = ipr.patientid;
-            
-            %% using results of SL_fMRI_initialization            
-            
-            this.sv_ = this.sv;
             
             %% using results of mlperceptron.PerceptronRelease factory                   
             
@@ -902,8 +968,8 @@ classdef AFC
             ip = inputParser;
             addParameter(ip, 'init', true, @islogical)
             addParameter(ip, 'make_sv', true, @islogical)
-            addParameter(ip, 'make_sl_fc_mean', false, @islogical)
-            addParameter(ip, 'make_sl_fc_gsp', false, @islogical)
+            addParameter(ip, 'make_sl_fc_mean', true, @islogical)
+            addParameter(ip, 'make_sl_fc_gsp', true, @islogical)
             addParameter(ip, 'sphere_radius', 3, @isnumeric)
             addParameter(ip, 'grid_spacing', 3, @isnumeric)
             addParameter(ip, 'min_num_vox', 10, @isnumeric)
@@ -919,7 +985,7 @@ classdef AFC
             %  numvox (minimum number of voxels required to use the sphere)
 
             if ipr.make_sv
-                [Nx,Ny,Nz] = this.registry.atlas_dims;
+                [Nx,Ny,Nz] = this.registry_.atlas_dims;
                 glmmsk_3d = reshape(this.glmatl_, [Nx, Ny, Nz]);
                 R = ipr.sphere_radius;
                 I = ipr.grid_spacing;
@@ -955,25 +1021,26 @@ classdef AFC
             
             if ipr.make_sl_fc_mean
                 import mlperceptron.PerceptronRelease;
-                pwd0 = pushd(this.registry.gtm500_dir);           
+                pwd0 = pushd(this.registry_.gtm500_dir);           
                 found_GMmsk_for_glm = find(this.GMmsk_for_glm_); % 18611 x 1
                 sl_fcz_sum = zeros(length(this.sv_), length(found_GMmsk_for_glm)); 
                 
-                for refnum = 1:this.registry.ref_count
+                for refnum = 1:this.registry_.ref_count
                     
                     tic
-                    refid = this.registry.gtm500_ids{refnum};
-                    load(fullfile(this.registry.gtm500_dir, refid, 'Perceptron', sprintf('%s%s', refid, this.registry.ref_resid_mat)),'bold_frames')
+                    refid = this.registry_.gtm500_ids{refnum};
+                    load(fullfile(this.registry_.gtm500_dir, refid, 'Perceptron', sprintf('%s%s', refid, this.registry_.ref_resid_mat)),'bold_frames')
                     % bold_frames has 245 x 65549
                     for ind = 1:length(this.sv_)                        
                         sphere_vox = this.sv_{ind}; % 13 x 1
                         bf_sv = mean(bold_frames(:, sphere_vox),2); % 245 x 1
-                        sl_fc(ind, :) = this.similarity(bf_sv, bold_frames(:, found_GMmsk_for_glm), 'kind', 'ch'); % SL_FC
+                        sl_fc(ind, :) = PerceptronRelease.corr_new(bf_sv, bold_frames(:, found_GMmsk_for_glm)); %#ok<AGROW> % SL_FC
                         % 2825 x 18611
                     end
                     
                     % Fisher z-transform
-                    sl_fcz = atanh(sl_fc);
+%                    sl_fcz = atanh(sl_fc);
+                    sl_fcz = sl_fc;
                     sl_fcz_sum = sl_fcz_sum + sl_fcz;
                     
                     fprintf('%s processed: %f\n', num2str(refnum), toc)
@@ -981,10 +1048,11 @@ classdef AFC
                 end
                 
                 % average
-                sl_fcz_mean = sl_fcz_sum / this.registry.ref_count;
+                sl_fcz_mean = sl_fcz_sum / this.registry_.ref_count;
                 % tanh <-> inverse Fisher z-transform
-                sl_fc_mean = tanh(sl_fcz_mean);
-                save(this.registry.sl_fc_mean_mat, 'sl_fc_mean')
+%                sl_fc_mean = tanh(sl_fcz_mean);
+                sl_fc_mean = sl_fcz_mean;
+                save(this.registry_.sl_fc_mean_mat, 'sl_fc_mean')
                 this.sl_fc_mean_ = sl_fc_mean;
                 clear('sl_fc_mean')
                 popd(pwd0)
@@ -995,75 +1063,272 @@ classdef AFC
             if ipr.make_sl_fc_gsp
                 import mlperceptron.PerceptronRelease;
                 import mlpark.SearchLight;
-                pwd0 = pushd(this.registry.gtm500_dir);                 
-                sl_fc_gsp = zeros(this.registry.ref_count, length(this.GMmsk_for_glm_));
+                pwd0 = pushd(this.registry_.gtm500_dir);                 
+                sl_fc_gsp = zeros(this.registry_.ref_count, length(this.GMmsk_for_glm_));
                 
-                for refnum = 1:this.registry.ref_count
+                for refnum = 1:this.registry_.ref_count
                     
                     tic
-                    refid = this.registry.gtm500_ids{refnum};
-                    load(fullfile(this.registry.gtm500_dir, refid, 'Perceptron', sprintf('%s%s', refid, this.registry.ref_resid_mat)),'bold_frames')
+                    refid = this.registry_.gtm500_ids{refnum};
+                    load(fullfile(this.registry_.gtm500_dir, refid, 'Perceptron', sprintf('%s%s', refid, this.registry_.ref_resid_mat)),'bold_frames')
                     
                     for ind = 1:length(this.sv_)
                         
                         sphere_vox = this.sv_{ind};
                         bf_sv = mean(bold_frames(:, sphere_vox),2);
-                        sl_fc(ind, :) = this.similarity(bf_sv, bold_frames(:, find(this.GMmsk_for_glm_)), 'kind', 'ch'); % SL_FC, corr_t
-
+                        sl_fc(ind, :) = PerceptronRelease.corr_new(bf_sv, bold_frames(:, find(this.GMmsk_for_glm_))); % SL_FC
+                        
                     end
                     
-                    r = this.similarity(sl_fc, this.sl_fc_mean_); % corr_{eta-}
+                    r = SearchLight.corr_kp(sl_fc, this.sl_fc_mean_);
                     
                     r_glm = zeros(1, length(this.GMmsk_for_glm_));
                     count = zeros(1, length(this.GMmsk_for_glm_));                    
                     for ind = 1:length(this.sv_)                        
                         temp = zeros(1, length(this.GMmsk_for_glm_)); 
                         counttemp = zeros(1, length(this.GMmsk_for_glm_));
-                        temp(this.sv_{ind}) = atanh(r(ind)); 
+%                        temp(this.sv_{ind}) = atanh(r(ind)); 
+                        temp(this.sv_{ind}) = r(ind); 
                         counttemp(this.sv_{ind}) = 1;
                         r_glm = r_glm + temp; 
                         count = count + counttemp;                        
-                    end % f_{sigma -> xi^pi}
+                    end
                     
                     % tanh <-> inverse Fisher z-transform
-                    sl_fc_gsp(refnum,:) = tanh(r_glm./count);
+%                    sl_fc_gsp(refnum,:) = tanh(r_glm./count);
+                    sl_fc_gsp(refnum,:) = r_glm./count;
                     fprintf('%s processed: %f\n', num2str(refnum), toc)                    
                 end
-                save(this.registry.sl_fc_gsp_mat, 'sl_fc_gsp')
+                save(this.registry_.sl_fc_gsp_mat, 'sl_fc_gsp')
                 this.sl_fc_gsp_ = sl_fc_gsp;
                 clear('sl_fc_gsp')
                 popd(pwd0)
             end
         end
+        function this = SL_initialization(this, varargin)
+            %% SL_INITIALIZATION
+            %  @return this.sl_fc_mean_: 
+            %          from %% SL-fMRI mean map using 100 GSP subjects
+            %          2825 (# spheres) x 18611 (# grey matter voxels)
+            %  @return this.sl_fc_gsp_:
+            %          from %% SL-fMRI correlation maps of 100 GSP subjects
+            %          100 (# subjects) x 65549 (# whole brain voxels)
+            %          this variable represents inter-subject variability across subjects in each voxel  
+            
+            % 04/18/19 KP
+            % 06/06/19 JJL          
+            %
+            % If you want to change the sphere radius or grid spacing, you should run
+            % this code again to create a new SL-fMRI "ground truth map"
+            
+            if this.registry.tanh_sandwich
+                this = this.SL_tanh_atanh_initialization__(varargin{:});
+            else
+                this = this.SL_initialization__(varargin{:});
+            end
+        end           
+        function this = SL_tanh_atanh_initialization__(this, varargin)
+            import mlperceptron.*
+            import mlperceptron.PerceptronRelease;
+            import mlpark.SearchLight;
+            
+            reg = this.registry;
+            pwd0 = pushd(reg.gtm500_dir); 
+            
+            gtm500_dir = reg.gtm500_dir;
+            ref_resid_mat = reg.ref_resid_mat;
+            similarity__ = @this.similarity;            
+            found_GMmsk_for_glm = find(this.GMmsk_for_glm_); % 18611 x 1
+            N_GMmsk_for_glm = length(this.GMmsk_for_glm_);
+            sv__ = this.sv;
+            Nsv__ = length(sv__);            
+            
+            %% make SL mean map using 100 GSP subjects
+          
+            sl_fc_cache = zeros(length(this.sv), length(found_GMmsk_for_glm)); 
+
+            for refnum = 1:reg.ref_count
+                refid = reg.gtm500_ids{refnum};
+                ld1 = load(fullfile(gtm500_dir, ...
+                           refid, ...
+                           'Perceptron', ...
+                           sprintf('%s%s', refid, ref_resid_mat)),'bold_frames'); % bold_frames has 245 x 65549  
+                bold_frames = ld1.bold_frames;
+                           
+                parfor isv = 1:Nsv__                     
+                    sphere_vox = sv__{isv}; % 13 x 1
+                    bf_sv = mean(bold_frames(:, sphere_vox),2); %#ok<PFBNS> % 245 x 1
+                    sl_fc_cache(isv,:) = sl_fc_cache(isv,:) + ...
+                        atanh(similarity__(bf_sv, bold_frames(:,found_GMmsk_for_glm), 'kind', 'ch')); % SL_FC
+                        % 2825 x 18611
+                end                    
+            end
+            sl_fc_mean = tanh(sl_fc_cache./reg.ref_count);
+            save(reg.sl_fc_mean_mat, 'sl_fc_mean')
+            
+            %% make SL correlation maps of 100 GSP subjects
+                   
+            sl_fc_cache = zeros(length(this.sv), length(found_GMmsk_for_glm));              
+            sl_fc_gsp = zeros(reg.ref_count, N_GMmsk_for_glm); 
+            
+            for refnum = 1:reg.ref_count
+                refid = reg.gtm500_ids{refnum};
+                ld1 = load(fullfile(gtm500_dir, ...
+                           refid, ...
+                           'Perceptron', ...
+                           sprintf('%s%s', refid, ref_resid_mat)),'bold_frames'); % bold_frames has 245 x 65549  
+                bold_frames = ld1.bold_frames;
+
+                parfor isv = 1:Nsv__                     
+                    sphere_vox = sv__{isv}; % 13 x 1
+                    bf_sv = mean(bold_frames(:, sphere_vox),2); %#ok<PFBNS> % 245 x 1
+                    sl_fc_cache(isv,:) = ...
+                        atanh(similarity__(bf_sv, bold_frames(:,found_GMmsk_for_glm), 'kind', 'ch')); % SL_FC
+                        % 2825 x 18611
+                end
+
+                r = similarity__(sl_fc_cache, sl_fc_mean); % contract gm voxels, return 1 x length(sv__)                                                    
+                r_glm = zeros(Nsv__, N_GMmsk_for_glm);
+                count = zeros(Nsv__, N_GMmsk_for_glm);
+                parfor isv = 1:Nsv__ % spheres will overlap for stride < sphere diameter
+                    sphere_vox = sv__{isv};
+                    r_glm_inc = zeros(1, N_GMmsk_for_glm);
+                    r_glm_inc(sphere_vox) = atanh(r(isv));
+                    r_glm(isv,:) = r_glm_inc;
+                    count_inc = zeros(1, N_GMmsk_for_glm);
+                    count_inc(sphere_vox) = 1;
+                    count(isv,:) = count_inc;
+                end % f_{sigma -> xi^pi}
+                sl_fc_gsp(refnum,:) = tanh(sum(r_glm,1)./sum(count,1));
+            end
+            save(reg.sl_fc_gsp_mat, 'sl_fc_gsp')
+            
+            %% finalize          
+            
+            this.sl_fc_mean_ = sl_fc_mean;
+            this.sl_fc_gsp_ = sl_fc_gsp;
+            clear('sl_fc_mean')
+            clear('sl_fc_gsp')
+            
+            popd(pwd0)
+        end 
+        function this = SL_initialization__(this, varargin)
+            import mlperceptron.*
+            import mlperceptron.PerceptronRelease;
+            import mlpark.SearchLight;
+            
+            reg = this.registry;
+            pwd0 = pushd(reg.gtm500_dir); 
+            
+            gtm500_dir = reg.gtm500_dir;
+            ref_resid_mat = reg.ref_resid_mat;
+            similarity__ = @this.similarity;            
+            found_GMmsk_for_glm = find(this.GMmsk_for_glm_); % 18611 x 1
+            N_GMmsk_for_glm = length(this.GMmsk_for_glm_);
+            sv__ = this.sv;
+            Nsv__ = length(sv__);            
+            
+            %% make SL mean map using 100 GSP subjects
+          
+            sl_fc_cache = zeros(length(this.sv), length(found_GMmsk_for_glm)); 
+
+            for refnum = 1:reg.ref_count
+                refid = reg.gtm500_ids{refnum};
+                ld1 = load(fullfile(gtm500_dir, ...
+                           refid, ...
+                           'Perceptron', ...
+                           sprintf('%s%s', refid, ref_resid_mat)),'bold_frames'); % bold_frames has 245 x 65549  
+                bold_frames = ld1.bold_frames;
+                           
+                parfor isv = 1:Nsv__                     
+                    sphere_vox = sv__{isv}; % 13 x 1
+                    bf_sv = mean(bold_frames(:, sphere_vox),2); %#ok<PFBNS> % 245 x 1
+                    sl_fc_cache(isv,:) = sl_fc_cache(isv,:) + ...
+                        similarity__(bf_sv, bold_frames(:,found_GMmsk_for_glm), 'kind', 'ch'); % SL_FC
+                        % 2825 x 18611
+                end                    
+            end
+            sl_fc_mean = sl_fc_cache./reg.ref_count;
+            save(reg.sl_fc_mean_mat, 'sl_fc_mean')
+            
+            %% make SL correlation maps of 100 GSP subjects
+                   
+            sl_fc_cache = zeros(length(this.sv), length(found_GMmsk_for_glm));              
+            sl_fc_gsp = zeros(reg.ref_count, N_GMmsk_for_glm); 
+            
+            for refnum = 1:reg.ref_count
+                refid = reg.gtm500_ids{refnum};
+                ld1 = load(fullfile(gtm500_dir, ...
+                           refid, ...
+                           'Perceptron', ...
+                           sprintf('%s%s', refid, ref_resid_mat)),'bold_frames'); % bold_frames has 245 x 65549  
+                bold_frames = ld1.bold_frames;
+
+                parfor isv = 1:Nsv__                     
+                    sphere_vox = sv__{isv}; % 13 x 1
+                    bf_sv = mean(bold_frames(:, sphere_vox),2); %#ok<PFBNS> % 245 x 1
+                    sl_fc_cache(isv,:) = ...
+                        similarity__(bf_sv, bold_frames(:,found_GMmsk_for_glm), 'kind', 'ch'); % SL_FC
+                        % 2825 x 18611
+                end
+
+                r = similarity__(sl_fc_cache, sl_fc_mean); % contract gm voxels, return 1 x length(sv__)                                                    
+                r_glm = zeros(Nsv__, N_GMmsk_for_glm);
+                count = zeros(Nsv__, N_GMmsk_for_glm);
+                parfor isv = 1:Nsv__ % spheres will overlap for stride < sphere diameter
+                    sphere_vox = sv__{isv};
+                    r_glm_inc = zeros(1, N_GMmsk_for_glm);
+                    r_glm_inc(sphere_vox) = r(isv);
+                    r_glm(isv,:) = r_glm_inc;
+                    count_inc = zeros(1, N_GMmsk_for_glm);
+                    count_inc(sphere_vox) = 1;
+                    count(isv,:) = count_inc;
+                end % f_{sigma -> xi^pi}
+                sl_fc_gsp(refnum,:) = sum(r_glm,1)./sum(count,1);
+            end
+            save(reg.sl_fc_gsp_mat, 'sl_fc_gsp')
+            
+            %% finalize          
+            
+            this.sl_fc_mean_ = sl_fc_mean;
+            this.sl_fc_gsp_ = sl_fc_gsp;
+            clear('sl_fc_mean')
+            clear('sl_fc_gsp')
+            
+            popd(pwd0)
+        end
 		  
  		function this = AFC(varargin)
  			%% AFC
- 			%  @param .
+ 			%  @param similarityKind defaults to 'kp'.
 
             import mlperceptron.*;
             ip = inputParser;
+            addParameter(ip, 'sphere_radius', 3, @isnumeric)
+            addParameter(ip, 'grid_spacing', 3, @isnumeric)
+            addParameter(ip, 'min_num_vox', 10, @isnumeric)
+            addParameter(ip, 'tanh_sandwich', true, @islogical)
+            addParameter(ip, 'ref_count', 2, @isscalar)
             addParameter(ip, 'similarityKind', 'kp', @ischar)
             parse(ip, varargin{:})
             ipr = ip.Results;
+            this.registry_ = mlafc.AFCRegistry.instance('initialize'); 
+            this.registry_.sphere_radius = ipr.sphere_radius;
+            this.registry_.grid_spacing = ipr.grid_spacing;
+            this.registry_.min_num_vox = ipr.min_num_vox;
+            this.registry_.tanh_sandwich = ipr.tanh_sandwich;
+            this.registry_.ref_count = ipr.ref_count;
+            this.registry_.tag = '';
             this.similarityKind_ = ipr.similarityKind;
-            
-            this.registry_ = mlafc.AFCRegistry.instance();            
-            if isfile(this.registry_.sl_fc_mean_mat)
-                load(this.registry_.sl_fc_mean_mat)
-                this.sl_fc_mean_ = sl_fc_mean;
-                clear('sl_fc_mean')
-            end
-            if isfile(this.registry_.sl_fc_gsp_mat)
-                load(this.registry_.sl_fc_gsp_mat)
-                this.sl_fc_gsp_ = sl_fc_gsp;
-                clear('sl_fc_gsp')
-            end
             
             this.glmatl_ = PerceptronRegistry.read_glm_atlas_mask();
             this.glmatl_(find(this.glmatl_)) = 1;  
             this.glmmsk_indices_ = find(this.glmatl_);
             GMctx = PerceptronRegistry.read_N21_aparc_aseg_GMctx(); % 147456 x 1
             this.GMmsk_for_glm_ = GMctx(find(this.glmatl_)); %#ok<*FNDSB> 
+            
+            this = sv_initialization(this);
+            this = load(this);
  		end
     end 
     
@@ -1116,15 +1381,70 @@ classdef AFC
             afc_glmmap = sl_fmri_pat - sl_fc_gsp_mean; % 1 x 65549  
             map = this.maskedVecToFullVec(afc_glmmap);
         end
+        function g = gtm_y(this)               
+            ld = load(fullfile(this.gtm500_dir, 'GTM_y.mat'), 'GTM_y');
+            g = ld.GTM_y;
+        end
+        function this = load(this)
+            if isfile(this.registry.sl_fc_mean_mat)
+                mat = load(this.registry.sl_fc_mean_mat);
+                this.sl_fc_mean_ = mat.sl_fc_mean;
+            end
+            if isfile(this.registry.sl_fc_gsp_mat)
+                mat = load(this.registry.sl_fc_gsp_mat);
+                this.sl_fc_gsp_ = mat.sl_fc_gsp;
+            end
+        end
         function vec = maskedVecToFullVec(this, vec0)
             %% MASKEDVECTOFULLVEC
-            %  @param   vec0 is 1 x 65549 or 65549 x 1
-            %  @returns vec  is 1 x 147456
+            %  @param   vec0 is Nt x 65549 
+            %  @returns vec  is Nt x 147456
             
             assert(isnumeric(vec0) && length(vec0) == 65549)
             
             vec = zeros(1, this.registry.atlas_numel()); 
             vec(this.glmmsk_indices_) = vec0; 
+        end
+        function this = sv_initialization(this)
+            %% SV_INITIALIZATION
+            %  @return this.sv_.
+            
+            % 04/18/19 KP
+            % 06/06/19 JJL   
+            
+            %% Store sphere voxels indices
+            
+            this.sv_ = {};
+            [Nx,Ny,Nz] = this.registry.atlas_dims;
+            glmmsk_3d = reshape(this.glmatl_, [Nx, Ny, Nz]);
+            R = this.registry.sphere_radius;
+            I = this.registry.grid_spacing;
+            isv = 1;
+            for xr = R:I:Nx-R
+                for yr = R:I:Ny-R
+                    for zr = R:I:Nz-R
+
+                        sphere_mask = zeros(Nx, Ny, Nz);
+                        for x = 1:Nx
+                            for y = 1:Ny
+                                for z = 1: Nz
+                                    if ( (x - xr)^2 + (y - yr)^2 + (z - zr)^2 < R^2 )
+                                        sphere_mask(x,y,z) = 1; % set elements within ellipsoid to 1
+                                    end
+                                end
+                            end
+                        end
+
+                        sphere_mask = sphere_mask .* glmmsk_3d;
+                        sphere_mask_glm = sphere_mask(this.glmmsk_indices_);
+                        sphere_vox = find(sphere_mask_glm); % indices => sphere_vox
+                        if length(sphere_vox) >= this.registry.min_num_vox
+                            this.sv_{isv} = sphere_vox;
+                            isv = isv+1;
+                        end
+                    end
+                end
+            end
         end
         function map = threshed_afc_map(this, varargin)
             %% THRESHED_AFC_MAP
@@ -1157,124 +1477,6 @@ classdef AFC
         sl_fc_mean_     % 2825 x 18611 ~ |sv_| x |grey matter|
         sl_fc_gsp_      % 100  x 65549 ~ |GSP| x |parenchyma|
         sv_             % 1    x 2825  cells with variable size [(x > 1) 1]
-    end
-    
-    %% HIDDEN
-    
-    methods (Hidden)
-        function MLPAFC(this)
-            this.plotIntersubjectVariability()
-        end
-        function tmap = mlp_afc(this, pat_mlp_v3)
-            addpath(genpath('Z:\shimony\Park\Matlab'))
-            load('MLPAFC/mlp_rmse_con100.mat') %#ok<*LOAD>
-            load('MLPAFC/MLP_GTM_100')
-            
-            MLP_GTM = MLP_GTM_100;
-            mlp_rmse_con = mlp_rmse_con100;
-            
-            pat_mlp_y = 1./(1 + exp(-pat_mlp_v3));
-            pat_mlp = pat_mlp_y./sum(pat_mlp_y')'; %#ok<UDIM>
-            
-            for sub = 1:50
-                MLP_GTM_sub = MLP_GTM(:,:,sub);
-                sq = (pat_mlp - MLP_GTM_sub).^2;
-                m = (sum(sq')/8); %#ok<UDIM>
-                r = sqrt(m);
-                mlp_rmse_pat(:,sub) = r; %#ok<*AGROW>
-            end
-            
-            for i = 1:length(this.GMmsk_for_glm_)                
-                [~,~,~,stats] = ttest2(mlp_rmse_con(i,:),mlp_rmse_pat(i,:));
-                tmap(i) = stats.tstat;                
-            end            
-        end          
-        function this = SL_AFC(this, varargin)
-            %% SL_AFC
-            % 04/18/19
-            % KP
-            
-            % Usage:
-            % 0) Ensure completion of SL_fMRI_initialization
-            % 1) Runs Multi-layer Perceptron (MLP) - Perceptron_Release
-            % 2) Create a patient specific SL_fMRI map
-            % 3) SL-derived aberrant functional connectivity            
-            
-            import mlperceptron.PerceptronFromFormat
-            import mlpark.SearchLight
-            import mlpark.*
-            
-            ip = inputParser;
-            addRequired(ip, 'patientdir', @isfolder)
-            addRequired(ip, 'patientid', @ischar)
-            addParameter(ip, 'afc_map_mat', this.registry.afc_map_mat, @ischar)
-            parse(ip, varargin{:})
-            ipr = ip.Results;   
-            
-            %% 0.  SL_fMRI_initialization            
-            
-            this.sv_ = this.sv;
-            
-            %% 1. MLP
-            
-            % Example:
-            % patientdir = '\\bciserver2\Kay\Emily\New_Epilepsy\PT15';
-            % patientid  = 'PT15';                     
-            
-            PerceptronFromFormat.createProbMaps(ipr.patientdir, ipr.patientid)
-            
-            %% 2. Create a patient specific SL-fMRI map
-            
-            %ext = '_faln_dbnd_xr3d_uwrp_atl_uout_resid.mat';
-            %load (fullfile(patientdir, 'Perceptron', sprintf('%s%s', patientid, ext)), 'bold_frames')
-
-            load(fullfile(ipr.patientdir, 'Perceptron', sprintf('%s%s', ipr.patientid, this.registry.perceptron_resid_mat)), 'bold_frames')
-            % bold_frames is 2307 x 65549 single, time-samples x parenchyma voxels; N_times is variable across studies
-            
-            sl_fc = zeros(length(this.sv), sum(this.GMmsk_for_glm_), class(bold_frames));
-            for ind = 1:length(this.sv) % EXPENSIVE without prealloc; 1:2825
-                fprintf('SL_AFC:  index %i of %i\n', ind, length(this.sv))
-                sphere_vox = this.sv{ind}; % 13 x 1
-                bf_sv = nanmean(bold_frames(:, sphere_vox), 2);
-                sl_fc(ind, :) = this.similarity(bf_sv, bold_frames(:, find(this.GMmsk_for_glm_)), 'kind', 'ch');
-                % sl_fc is 2825 x 18611, times-samples x found gray-matter voxels
-            end
-            
-            r = this.similarity(sl_fc, this.sl_fc_mean_); % 1 x 2825 <= 2825 x 18611, 2825 x 18611
-            
-            r_glm = zeros(1, length(this.GMmsk_for_glm_)); % 1 x 65549
-            count = zeros(1, length(this.GMmsk_for_glm_)); % 1 x 65549
-            
-            for ind = 1:length(this.sv)                
-                temp = zeros(1, length(this.GMmsk_for_glm_)); 
-                temp(this.sv{ind}) = atanh(r(ind)); 
-                counttemp = zeros(1, length(this.GMmsk_for_glm_));
-                counttemp(this.sv{ind}) = 1;
-                r_glm = r_glm + temp; 
-                count = count + counttemp;                
-            end
-            
-            this.sl_fmri_pat = tanh(r_glm./count); % 1 x 65549
-            
-            %% 3. SL-AFC            
-            
-            this.afc_map = this.threshed_afc_map(this.sl_fmri_pat);
-            
-            %% Visualization
-            
-            figure
-            this.mapOverlay(this.atlas_1d', this.afc_map)
-            
-            %% save afc_map file
-            
-            workdir = fullfile(ipr.patientdir, ['AFCmap_' datestr(now,30)]);
-            mkdir(workdir)
-            pwd0 = pushd(workdir);
-            afc_map = this.afc_map; %#ok<PROPLC>
-            save(ipr.afc_map_mat, 'afc_map')
-            saveFigures
-            popd(pwd0)
-        end
     end
 
 	%  Created with Newcl by John J. Lee after newfcn by Frank Gonzalez-Morphy

@@ -386,6 +386,8 @@ classdef EmilysAFC < mlafc.AFC
                 popd(pwd0)
             end
         end
+        function calc_swarmchart(varargin)
+        end
         function calc_var(varargin)
             ip = inputParser;
             addOptional(ip, 'toglob', 'PT*', @ischar)
@@ -403,6 +405,8 @@ classdef EmilysAFC < mlafc.AFC
                 popd(pwd0)
             end
         end
+        function calc_violinplot(varargin)
+        end
         function [sim,featic,funcic] = calcdice__(featdata, funcdata, varargin)
             
             import mlafc.EmilysAFC.flip12
@@ -415,7 +419,7 @@ classdef EmilysAFC < mlafc.AFC
             ipr = ip.Results;
             
             [GLMmask,~,~,glmic] = mlperceptron.PerceptronRegistry.read_glm_atlas_mask();
-            GLMmask(find(GLMmask)) = 1; 
+            GLMmask(find(GLMmask)) = 1;  %#ok<FNDSB>
             
             % reshape
             GLMmask  = reshape(GLMmask,  [48 64 48]);
@@ -423,8 +427,8 @@ classdef EmilysAFC < mlafc.AFC
             funcdata = reshape(funcdata, [48 64 48]) .* GLMmask; 
             
             % threshold funcdata
-            mu = nanmean(funcdata(logical(GLMmask)));
-            sigma = nanstd(funcdata(logical(GLMmask)));
+            mu = mean(funcdata(logical(GLMmask)), 'omitnan');
+            sigma = std(funcdata(logical(GLMmask)), 'omitnan');
             
             funcdata = funcdata < mu - ipr.Nsigma*sigma;
             

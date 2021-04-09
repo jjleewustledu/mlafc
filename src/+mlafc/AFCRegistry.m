@@ -1,4 +1,4 @@
-classdef AFCRegistry < handle & mlpark.ParkRegistry
+classdef AFCRegistry < handle
 	%% AFCREGISTRY  
 
 	%  $Revision$
@@ -7,24 +7,28 @@ classdef AFCRegistry < handle & mlpark.ParkRegistry
  	%% It was developed on Matlab 9.5.0.1067069 (R2018b) Update 4 for MACI64.  Copyright 2019 John Joowon Lee.
  	
     properties
-        sphere_radius
+        atlVoxelSize = 333
+        bold_suffix = '_faln_dbnd_xr3d_atl_g7_bpss_resid'
         grid_spacing
         min_num_vox
         ref_count = 100
+        sphere_radius
         tag = ''
         tanh_sandwich
     end
     
 	properties (Dependent)
+        parkhome
+        gtm500_dir
+        gtm500_ids
+        
         afc_map_mat
         Hacker_Data_ALL
-        MLPAFC_dir
-        MLP_GTM_100
-        mlp_rmse_con100
         perceptron_uout_resid_mat
         perceptron_resid_mat
         ref_resid_mat
- 		sl_fc_gsp_mat
+        sl_fc_gsp_mat
+ 		sl_fc_gsp_sum_prob_mat
         sl_fc_mean_mat
         tanh_tag
  	end
@@ -77,27 +81,20 @@ classdef AFCRegistry < handle & mlpark.ParkRegistry
         function g = get.afc_map_mat(~)
             g = ['afc_map_' datestr(now, 30)];
         end
-        function g = get.Hacker_Data_ALL(this)
-            g = fullfile(this.root, 'data', 'nil-bluearc', 'corbetta', 'Hacker', 'Data', 'ALL', '');
+        function g = get.gtm500_dir(this)
+            g = fullfile(this.parkhome, 'GTM500Perceptron', ''); 
         end
-        function g = get.MLPAFC_dir(this)
-            g = fullfile(this.parkhome, 'MLPAFC', '');
-        end
-        function g = get.MLP_GTM_100(this)
-            if isempty(this.MLP_GTM_100_)                
-                load(fullfile(this.MLPAFC_dir, 'MLP_GTM_100.mat'), 'MLP_GTM_100')
-                this.MLP_GTM_100_ = MLP_GTM_100;  %#ok<PROP>
-                clear('MLP_GTM_100')
+        function g = get.gtm500_ids(this)
+            if isempty(this.gtm500_ids_)
+                this.gtm500_ids_ = importdata(fullfile(this.gtm500_dir, 'GTM500.lst'));
             end
-            g = this.MLP_GTM_100_;
+            g = this.gtm500_ids_;
         end
-        function g = get.mlp_rmse_con100(this)
-            if isempty(this.mlp_rmse_con100_)                
-                load(fullfile(this.MLPAFC_dir, 'mlp_rmse_con100.mat'), 'mlp_rmse_con100')
-                this.mlp_rmse_con100_ = mlp_rmse_con100;  %#ok<PROP>
-                clear('mlp_rmse_con100')
-            end
-            g = this.mlp_rmse_con100_;
+        function g = get.Hacker_Data_ALL(~)
+            g = fullfile('/', 'data', 'nil-bluearc', 'corbetta', 'Hacker', 'Data', 'ALL', '');
+        end
+        function g = get.parkhome(~)
+            g = '/data/nil-bluearc/shimony/Park';
         end
         function g = get.perceptron_uout_resid_mat(~)
             g = '_faln_dbnd_xr3d_uwrp_atl_uout_resid.mat';
@@ -113,6 +110,11 @@ classdef AFCRegistry < handle & mlpark.ParkRegistry
                 sprintf('sl_fc_gsp_radius%i_stride%i_N%i%s%s.mat', ...
                 this.sphere_radius, this.grid_spacing, this.ref_count, this.tanh_tag, this.tag));
         end
+        function g = get.sl_fc_gsp_sum_prob_mat(this)
+            g = fullfile(getenv('WORK'), ...
+                sprintf('sl_fc_gsp_sum_prob_radius%i_stride%i_N%i%s%s.mat', ...
+                this.sphere_radius, this.grid_spacing, this.ref_count, this.tanh_tag, this.tag));
+        end
         function g = get.sl_fc_mean_mat(this)
             g = fullfile(getenv('WORK'), ...
                 sprintf('sl_fc_mean_radius%i_stride%i_N%i%s%s.mat', ...
@@ -125,18 +127,25 @@ classdef AFCRegistry < handle & mlpark.ParkRegistry
                 g = '';
             end
         end
+        
+        %%        
+        
+        function m = sl_fc_gsp_ref_mat(this, ref)
+            assert(isscalar(ref))
+            m = fullfile(getenv('WORK'), ...
+                sprintf('sl_fc_gsp%i_radius%i_stride%i_N%i%s%s.mat', ...
+                ref, this.sphere_radius, this.grid_spacing, this.ref_count, this.tanh_tag, this.tag));
+        end
     end
     
     %% PROTECTED
     
     properties (Access = protected)
-        MLP_GTM_100_
-        mlp_rmse_con100_
+        gtm500_ids_
     end
     
 	methods (Access = protected)		  
  		function this = AFCRegistry(varargin)
- 			this = this@mlpark.ParkRegistry(varargin{:});
  		end
  	end 
 
