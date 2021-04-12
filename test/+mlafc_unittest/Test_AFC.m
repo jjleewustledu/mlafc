@@ -79,11 +79,14 @@ classdef Test_AFC < matlab.unittest.TestCase
             ic.save()
             ic.fsleyes()
         end
-        function test_makeSoftmax2(this)            
+        function test_makeSoftmax(this)
             setenv('WORK', this.WORK)
             cd(this.WORK)
-            pts = {'PT36'}; % {'PT3' 'PT5' 'PT7' 'PT15' 'PT16' 'PT18' 'PT20' 'PT26' 'PT28' 'PT30' 'PT32' 'PT33' 'PT34' 'PT35' 'PT36' 'PT43'};
+            pts = globFoldersT('PT*');
             for ip = 1:length(pts)
+                if strcmp(pts{ip}, 'PTmore')
+                    continue
+                end
                 try
                     pdir = fullfile(getenv('WORK'), pts{ip}, '');
                     pwd0 = pushd(pdir);
@@ -105,7 +108,7 @@ classdef Test_AFC < matlab.unittest.TestCase
             cd(this.WORK)
             this.testObj.SL_fMRI_initialization()
         end
-        function test_makeSoftmax(this)            
+        function test_makeSoftmax_ori(this)            
             setenv('WORK', this.WORK)
             cd(this.WORK)
             pts = {'PT15' 'PT26' 'PT28' 'PT34' 'PT35' 'PT36'};

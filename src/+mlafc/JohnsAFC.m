@@ -259,7 +259,11 @@ classdef JohnsAFC < mlafc.AFC
             clear('sl_fc_mean')
             
             popd(pwd0)
-        end        
+        end  
+        function e = energy_fc(this, fc)
+            %e = diag(this.acorrcoef(fc, this.sl_fc_mean_))';
+            e = mean(this.acorrcoef(fc, this.sl_fc_mean_), 2, 'omitnan')';
+        end      
         function [this,ipr] = makeSoftmax(this, varargin)
             %% MAKESOFTMAX of dissimilarity requires completion of explore_fc() which stores 
             %  this.sl_fc_gsp_, this.sl_fc_mean_.
@@ -304,7 +308,7 @@ classdef JohnsAFC < mlafc.AFC
                 fprintf('makeSoftmax.bold_frames.size -> %s\n', mat2str(size(bold_frames)))
             end           
             
-            %% per patient, make connectivity map
+            %% per patient, build connectivity map
             
             sv__ = this.sv;
             Nsv__ = length(sv__);
@@ -319,8 +323,7 @@ classdef JohnsAFC < mlafc.AFC
             
             %% project downsampled fibers to base manifold, using mean abs deviation of fiber from mean field of controls
             
-            energy = squeeze(sqrt(mean((sl_fc - this.sl_fc_mean_).^2, 1, 'omitnan'))); % 1 x this.N_BOLD
-            prob = exp(energy);
+            prob = exp(-this.energy_fc(sl_fc)); % 1 x this.N_BOLD
 
             %% assemble softmax
             
@@ -330,16 +333,15 @@ classdef JohnsAFC < mlafc.AFC
         end
         function sum_prob = sum_prob_refs(this)
             if isfile(this.registry.sl_fc_gsp_sum_prob_mat)
-                ld = load(sl_fc_gsp_sum_prob_mat);
+                ld = load(this.registry.sl_fc_gsp_sum_prob_mat);
                 sum_prob = ld.sum_prob;
                 return
             end
-            sum_prob = zeros(size(this.sl_fc_mean_));
+            sum_prob = zeros(1, this.N_BOLD, 'single');
             for refnum = 1:this.registry.ref_count
                 try
                     ld = load(this.registry.sl_fc_gsp_ref_mat(refnum));
-                    energy_gsp = squeeze(sqrt(mean((ld.sl_fc_gsp_ref - this.sl_fc_mean_).^2, 1, 'omitnan')));
-                    sum_prob = sum_prob + exp(energy_gsp);
+                    sum_prob = sum_prob + exp(-this.energy_fc(ld.sl_fc_gsp_ref));
                 catch ME
                     handwarning(ME)
                 end
@@ -374,9 +376,8 @@ classdef JohnsAFC < mlafc.AFC
             this.registry_.tanh_sandwich = false;
             this.registry_.tag = '_JohnsAFC';
             
-            if isempty(this.sl_fc_mean_) && isfile(this.registry.sl_fc_mean_mat)
-                mat = load(this.registry.sl_fc_mean_mat);
-                this.sl_fc_mean_ = mat.sl_fc_mean;
+            if isempty(this.sl_fc_mean_)
+                this = load(this);
             end
         end        
     end 
