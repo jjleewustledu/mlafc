@@ -63,7 +63,30 @@ classdef JohnsAFC < mlafc.AFC
             for t = 1:Nt
                 arr(t,found_glmatl_') = arr0(t,:);
             end
-        end     
+        end 
+        function d = kldiv(corrP, corrQ)
+            %% KLDIV estimates divergence between the prob of FC for data and the prob of FC for a model
+            %  using complete asymmetric correlation matrices without downsampling.
+            %  @param corrP describes spheres-fiber x base for data.
+            %  @param corrQ describes spheres-fiber x base for model.
+            %  @return KL divergence in vector ~ 1 x base in nats.
+            
+            P = exp(corrP); % prob of corr matrix for data
+            P(isnan(P)) = eps;
+            P(P < eps) = eps; % manage round-off
+            for ib = 1:size(P,2)
+                P(:,ib) = P(:,ib) / sum(P(:,ib),1); % ~ prob normalized to each base voxel
+            end
+            
+            Q = exp(corrQ); % prob of corr matrix for model
+            Q(isnan(Q)) = eps;
+            Q(Q < eps) = eps; % manage round-off
+            for ib = 1:size(Q,2)
+                Q(:,ib) = Q(:,ib) / sum(Q(:,ib),1); % ~ prob normalized to each base voxel
+            end
+            
+            d = sum(P .* (log(P) - log(Q)), 1); % marginalize fibers
+        end
         function arr = GMmskArrToFullArr(arr0)
             %% GMMSKARRTOFULLARR
             %  @param required arr0 is Npheres x 18611.
@@ -260,9 +283,25 @@ classdef JohnsAFC < mlafc.AFC
             
             popd(pwd0)
         end  
-        function e = energy_fc(this, fc)
-            %e = diag(this.acorrcoef(fc, this.sl_fc_mean_))';
-            e = mean(this.acorrcoef(fc, this.sl_fc_mean_), 2, 'omitnan')';
+        function e = energy_similarity(this, fc)
+            %% ENERGY_SIMILARITY <= 0.  Greater energy_similarity describes greater similarity between data and normal model.  
+            
+            switch this.registry.similarityTag
+                case '_kldiv'
+                    e = -this.kldiv(fc, this.sl_fc_mean_);
+                case '_diag'
+                    e = diag(this.acorrcoef(fc, this.sl_fc_mean_))';
+                case '_tanhmae'
+                    e = -tanh(mean(atanh(abs(fc - this.sl_fc_mean_)), 1, 'omitnan'));
+                case '_mae'
+                    e = -mean(abs(fc - this.sl_fc_mean_), 1, 'omitnan');
+                case '_rmse'
+                    e = -sqrt(mean((fc - this.sl_fc_mean_).^2, 1, 'omitnan'));
+                case '_mean2'
+                    e = mean(this.acorrcoef(fc, this.sl_fc_mean_), 2, 'omitnan')';
+                otherwise
+                    error('mlafc:ValueError', 'JohnsAFC.energy_similarity')
+            end
         end      
         function [this,ipr] = makeSoftmax(this, varargin)
             %% MAKESOFTMAX of dissimilarity requires completion of explore_fc() which stores 
@@ -321,15 +360,32 @@ classdef JohnsAFC < mlafc.AFC
                     acorrcoef(bf_sv, bold_frames); % N_{sphere_vox} x 65549
             end
             
-            %% project downsampled fibers to base manifold, using mean abs deviation of fiber from mean field of controls
+            %% project downsampled fibers to base manifold, using energy of similarity of fc to mean field fc,
+            %% obtaning prob of dissimilarity.
             
-            prob = exp(-this.energy_fc(sl_fc)); % 1 x this.N_BOLD
+            prob = exp(-this.energy_similarity(sl_fc)); % 1 x this.N_BOLD
 
             %% assemble softmax
             
             sum_prob = prob + this.sum_prob_refs(); % init with patient
             this.afc_map = prob ./ sum_prob; % Boltzmann distribution
             this.afc_map = this.glmmskArrToFullArr(this.afc_map); % 1 x 147456
+        end
+        function p = product(this)
+            perreg = mlperceptron.PerceptronRegistry.instance();
+            [d1,d2,d3] = perreg.atlas_dims;
+            img = reshape(this.afc_map, [d1 d2 d3]);
+            img(isnan(img)) = 0;
+            warning('mlafc:RuntimeWarning', ...
+                'AFC.product() is flipping axes 1 & 2 to correct flips from mlperceptron.Fourdfp.Read4dfp')
+            img = flip(flip(img, 1), 2);
+            
+            ifc = mlfourd.ImagingFormatContext( ...
+                fullfile(getenv('REFDIR'), '711-2B_333.4dfp.hdr'));
+            ifc.img = img;
+            ifc.filepath = pwd;
+            ifc.fileprefix = ['AFC_product' this.registry.similarityTag];
+            p = mlfourd.ImagingContext2(ifc);
         end
         function sum_prob = sum_prob_refs(this)
             if isfile(this.registry.sl_fc_gsp_sum_prob_mat)
@@ -341,7 +397,7 @@ classdef JohnsAFC < mlafc.AFC
             for refnum = 1:this.registry.ref_count
                 try
                     ld = load(this.registry.sl_fc_gsp_ref_mat(refnum));
-                    sum_prob = sum_prob + exp(-this.energy_fc(ld.sl_fc_gsp_ref));
+                    sum_prob = sum_prob + exp(-this.energy_similarity(ld.sl_fc_gsp_ref));
                 catch ME
                     handwarning(ME)
                 end

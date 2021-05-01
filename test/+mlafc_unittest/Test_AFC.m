@@ -38,7 +38,7 @@ classdef Test_AFC < matlab.unittest.TestCase
                 ic.save()
             end
         end
-        function test_radius(this)            
+        function test_radius(this)
             setenv('WORK', this.WORK)
             cd(this.WORK)
             jafc = mlafc.JohnsAFC( ...
@@ -66,7 +66,7 @@ classdef Test_AFC < matlab.unittest.TestCase
             ic = mlafc.JohnsAFC.slfcMatToIC('sl_fc_mean_radius2_stride3_N10_JohnsAFC.mat', 'sl_fc_mean');
             ic.save()
         end
-        function test_explore_fc(this)            
+        function test_explore_fc(this)
             setenv('WORK', this.WORK)
             cd(this.WORK)
             jafc = mlafc.JohnsAFC( ...
@@ -103,12 +103,12 @@ classdef Test_AFC < matlab.unittest.TestCase
                 end
             end            
         end
-        function test_make_SLfMRI_init(this)         
+        function test_make_SLfMRI_init(this)
             setenv('WORK', this.WORK)
             cd(this.WORK)
             this.testObj.SL_fMRI_initialization()
         end
-        function test_makeSoftmax_ori(this)            
+        function test_makeSoftmax_ori(this)
             setenv('WORK', this.WORK)
             cd(this.WORK)
             pts = {'PT15' 'PT26' 'PT28' 'PT34' 'PT35' 'PT36'};
@@ -299,7 +299,7 @@ classdef Test_AFC < matlab.unittest.TestCase
 		function setupAFC(this)
  			import mlafc.*;
             setenv('WORK', this.WORK)
- 			this.testObj_ = AFC;
+ 			this.testObj_ = KaysAFC;
  		end
 	end
 

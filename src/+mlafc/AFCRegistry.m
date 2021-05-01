@@ -12,6 +12,7 @@ classdef AFCRegistry < handle
         grid_spacing
         min_num_vox
         ref_count = 100
+        similarityTag = '_tanhmae';
         sphere_radius
         tag = ''
         tanh_sandwich
@@ -112,8 +113,8 @@ classdef AFCRegistry < handle
         end
         function g = get.sl_fc_gsp_sum_prob_mat(this)
             g = fullfile(getenv('WORK'), ...
-                sprintf('sl_fc_gsp_sum_prob_radius%i_stride%i_N%i%s%s.mat', ...
-                this.sphere_radius, this.grid_spacing, this.ref_count, this.tanh_tag, this.tag));
+                sprintf('sl_fc_gsp_sum_prob_radius%i_stride%i_N%i%s%s%s.mat', ...
+                this.sphere_radius, this.grid_spacing, this.ref_count, this.tanh_tag, this.tag, this.similarityTag));
         end
         function g = get.sl_fc_mean_mat(this)
             g = fullfile(getenv('WORK'), ...

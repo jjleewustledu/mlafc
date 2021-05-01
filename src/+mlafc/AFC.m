@@ -21,7 +21,6 @@ classdef AFC
  	
 	properties (Dependent)
         atlas_1d
-        product
  		registry
         similarityKind
         sv
@@ -335,22 +334,6 @@ classdef AFC
         function g = get.atlas_1d(~)
             g = mlperceptron.PerceptronRegistry.read_MNI152_T1_0p5mm();
         end
-        function g = get.product(this)
-            perreg = mlperceptron.PerceptronRegistry.instance();
-            [d1,d2,d3] = perreg.atlas_dims;
-            img = reshape(this.afc_map, [d1 d2 d3]);
-            img(isnan(img)) = 0;
-            warning('mlafc:RuntimeWarning', ...
-                'AFC.product() is flipping axes 1 & 2 to correct flips from mlperceptron.Fourdfp.Read4dfp')
-            img = flip(flip(img, 1), 2);
-            
-            ifc = mlfourd.ImagingFormatContext( ...
-                fullfile(getenv('REFDIR'), '711-2B_333.4dfp.hdr'));
-            ifc.img = img;
-            ifc.filepath = pwd;
-            ifc.fileprefix = 'AFC_product';
-            g = mlfourd.ImagingContext2(ifc);
-        end
         function g = get.registry(this)
             g = this.registry_;
         end
@@ -363,75 +346,60 @@ classdef AFC
         
         %%        
         
-        function plotIntersubjectVariability(this)
+        function afc_corr = hotspot_corr(this, varargin)
+            %% HOTSPOT_CORR
+            %  Preconditions:
+            %  -- completion of SL_fMRI_initialization
+            %  -- completion of mlperceptron.PerceptronRelease factory
+            %  @param patientdir is a folder.
+            %  @param patientid is char.
+            %  @param afc_filename is char.
+            %  @param Nframes is numeric.
+            %  @param feature is a filename, NIfTI or 4dfp.
+            %  @returns instance of mlafc.AFC.  
+            %  @returns inputParser.Results.            
             
-            import mlpark.SearchLight
-            
-            addpath(genpath('Z:\shimony\Park\Matlab'))
-            tgtatlas = 'Z:\shimony\Park\atlas\Targets\MNI152_711-2B_333.4dfp.img';
-            tgtanatData = this.imgread(tgtatlas);
-            
-            %% MLP AFC
-            numsub = 150;
-            MLP_GTM_150 = this.gtm_y; % GTM_y(:,:,1:numsub);
-            
-            ind = 1;
-            for sub1 = 1:numsub
-                for sub2 = sub1+1:numsub
-                    
-                    MLP_GTM_sub1 = MLP_GTM_150(:,:,sub1);
-                    MLP_GTM_sub2 = MLP_GTM_150(:,:,sub2);
-                    
-                    % rmse
-                    sq = (MLP_GTM_sub1 - MLP_GTM_sub2).^2;
-                    m = sum(sq')/8; %#ok<UDIM>
-                    r = sqrt(m);
-                    mlp_rmse_con150(:,ind) = r; 
-                    
-                    % cc
-                    mlp_cc(:,ind) = SearchLight.corr_v2(MLP_GTM_sub1, MLP_GTM_sub2); 
-                    
-                    ind = ind+1;
-                end
-            end
-            
-            %%
-            E_mean = mean(mlp_rmse_con150'); %#ok<UDIM>
-            
-            intersubject_var = zeros(1,147456);
-            intersubject_var(this.glmmsk_indices_) = E_mean;
-            
-            figure; 
-            SearchLight.MapOverlay(tgtanatData, intersubject_var,'caxvals',[0 0.2],'ttlvec', "Intersubject Variability: GSP 100")
-            
-            %%
-            cc_mean = mean(mlp_cc'); %#ok<UDIM>
-            
-            intersubject_var = zeros(1,147456);
-            intersubject_var(this.glmmsk_indices_) = cc_mean;
-            
-            figure; 
-            SearchLight.MapOverlay(tgtanatData, intersubject_var,'caxvals',[0 1],'ttlvec', "Intersubject Variability: GSP 100")
-        end      
-        function s = similarity(this, x, y, varargin)
             ip = inputParser;
-            addParameter(ip, 'kind', this.similarityKind, @ischar)
+            ip.KeepUnmatched = true;
+            addRequired( ip, 'patientdir', @isfolder)
+            addRequired( ip, 'patientid', @ischar)
+            addParameter(ip, 'afc_filename', ['AFC_this_' datestr(now, 30) '.mat'], @ischar)
+            addParameter(ip, 'feature_filename', 'afc.4dfp.hdr', @isfile)
+            addParameter(ip, 'load_afc', true, @islogical)
+            addParameter(ip, 'Nsigma', 2, @isnumeric)
             parse(ip, varargin{:})
             ipr = ip.Results;
+            this.patientdir = ipr.patientdir;
+            this.patientid = ipr.patientid;                        
+            workdir = fileparts(ipr.afc_filename);
+            pwd0 = pushd(workdir);
             
-            switch lower(ipr.kind)
-                case 'ch'
-                    s = mlperceptron.PerceptronRelease.corr_new(x, y);
-                case 'kp'
-                    s = mlpark.SearchLight.corr_kp(x, y);
-                case 'kl'
-                    s = 1 - tanh(mlafc.AFC.kldiv(x, y)); % dissimilarity -> similarity
-                case 'js'
-                    s = 1 - tanh(mlafc.AFC.kldiv(x, y, 'js')); % dissimilarity -> similarity
-                otherwise
-                    error('mlafc:RuntimeError', 'AFC.similarity.ipr.kind->%s', ipr.kind)
-            end
-        end
+            % retrieve afc \in R^3; threshold to mask
+            afc = mlfourd.ImagingContext2(ipr.feature_filename);
+            mu = afc.dipmean();
+            sigma = afc.dipstd();
+            afc_uthr = afc.uthresh(mu - ipr.Nsigma*sigma);            
+            
+            % retrieve bold \in R^{3+1}; afc_dyn := bold in R using afc mask
+            bold = mlperceptron.PerceptronRelease.bold_frames_mat_to_ImagingContext(ipr.patientdir);            
+            bold_img = bold.fourdfp.img;
+            Nxyz = [size(bold_img, 1) size(bold_img, 2) size(bold_img, 3)];
+            Nt = size(bold_img, 4);
+            afc_bool = afc_uthr.logical;
+            afc_dyn = zeros(Nt, 1);
+            for t = 1:Nt
+                bold_frame = bold_img(:,:,:,t);
+                afc_dyn(t) = mean(bold_frame(afc_bool));
+            end 
+            
+            % correlate afc_dyn in R with bold in R^{1+3}
+            bold_img = reshape(bold_img, [prod(Nxyz) Nt]);
+            c = corr(afc_dyn, bold_img');
+            c = reshape(c, Nxyz);
+            afc_corr = mlfourd.ImagingContext2(c, 'mmppix', [3 3 3], 'filename', 'afc_corr.4dfp.hdr');            
+            
+            popd(pwd0)
+        end 
         function [this,ipr] = makeSoftmax(this, varargin)
             %% MAKESOFTMAX of dissimilarity
             %  Preconditions:
@@ -824,6 +792,72 @@ classdef AFC
                          this.removeInfratentorial(this.afc_map))
             saveFigures(workdir)
             popd(pwd0)
+        end    
+        function plotIntersubjectVariability(this)
+            
+            import mlpark.SearchLight
+            
+            addpath(genpath('Z:\shimony\Park\Matlab'))
+            tgtatlas = 'Z:\shimony\Park\atlas\Targets\MNI152_711-2B_333.4dfp.img';
+            tgtanatData = this.imgread(tgtatlas);
+            
+            %% MLP AFC
+            numsub = 150;
+            MLP_GTM_150 = this.gtm_y; % GTM_y(:,:,1:numsub);
+            
+            ind = 1;
+            for sub1 = 1:numsub
+                for sub2 = sub1+1:numsub
+                    
+                    MLP_GTM_sub1 = MLP_GTM_150(:,:,sub1);
+                    MLP_GTM_sub2 = MLP_GTM_150(:,:,sub2);
+                    
+                    % rmse
+                    sq = (MLP_GTM_sub1 - MLP_GTM_sub2).^2;
+                    m = sum(sq')/8; %#ok<UDIM>
+                    r = sqrt(m);
+                    mlp_rmse_con150(:,ind) = r; 
+                    
+                    % cc
+                    mlp_cc(:,ind) = SearchLight.corr_v2(MLP_GTM_sub1, MLP_GTM_sub2); 
+                    
+                    ind = ind+1;
+                end
+            end
+            
+            %%
+            E_mean = mean(mlp_rmse_con150'); %#ok<UDIM>
+            
+            intersubject_var = zeros(1,147456);
+            intersubject_var(this.glmmsk_indices_) = E_mean;
+            
+            figure; 
+            SearchLight.MapOverlay(tgtanatData, intersubject_var,'caxvals',[0 0.2],'ttlvec', "Intersubject Variability: GSP 100")
+            
+            %%
+            cc_mean = mean(mlp_cc'); %#ok<UDIM>
+            
+            intersubject_var = zeros(1,147456);
+            intersubject_var(this.glmmsk_indices_) = cc_mean;
+            
+            figure; 
+            SearchLight.MapOverlay(tgtanatData, intersubject_var,'caxvals',[0 1],'ttlvec', "Intersubject Variability: GSP 100")
+        end         
+        function p = product(this)
+            perreg = mlperceptron.PerceptronRegistry.instance();
+            [d1,d2,d3] = perreg.atlas_dims;
+            img = reshape(this.afc_map, [d1 d2 d3]);
+            img(isnan(img)) = 0;
+            warning('mlafc:RuntimeWarning', ...
+                'AFC.product() is flipping axes 1 & 2 to correct flips from mlperceptron.Fourdfp.Read4dfp')
+            img = flip(flip(img, 1), 2);
+            
+            ifc = mlfourd.ImagingFormatContext( ...
+                fullfile(getenv('REFDIR'), '711-2B_333.4dfp.hdr'));
+            ifc.img = img;
+            ifc.filepath = pwd;
+            ifc.fileprefix = 'AFC_product';
+            p = mlfourd.ImagingContext2(ifc);
         end
         function cut_corr = resection_corr(this, varargin)
             %% RESECTION_CORR
@@ -878,64 +912,29 @@ classdef AFC
             
             popd(pwd0)
         end
-        function afc_corr = hotspot_corr(this, varargin)
-            %% HOTSPOT_CORR
-            %  Preconditions:
-            %  -- completion of SL_fMRI_initialization
-            %  -- completion of mlperceptron.PerceptronRelease factory
-            %  @param patientdir is a folder.
-            %  @param patientid is char.
-            %  @param afc_filename is char.
-            %  @param Nframes is numeric.
-            %  @param feature is a filename, NIfTI or 4dfp.
-            %  @returns instance of mlafc.AFC.  
-            %  @returns inputParser.Results.            
-            
-            ip = inputParser;
-            ip.KeepUnmatched = true;
-            addRequired( ip, 'patientdir', @isfolder)
-            addRequired( ip, 'patientid', @ischar)
-            addParameter(ip, 'afc_filename', ['AFC_this_' datestr(now, 30) '.mat'], @ischar)
-            addParameter(ip, 'feature_filename', 'afc.4dfp.hdr', @isfile)
-            addParameter(ip, 'load_afc', true, @islogical)
-            addParameter(ip, 'Nsigma', 2, @isnumeric)
-            parse(ip, varargin{:})
-            ipr = ip.Results;
-            this.patientdir = ipr.patientdir;
-            this.patientid = ipr.patientid;                        
-            workdir = fileparts(ipr.afc_filename);
-            pwd0 = pushd(workdir);
-            
-            % retrieve afc \in R^3; threshold to mask
-            afc = mlfourd.ImagingContext2(ipr.feature_filename);
-            mu = afc.dipmean();
-            sigma = afc.dipstd();
-            afc_uthr = afc.uthresh(mu - ipr.Nsigma*sigma);            
-            
-            % retrieve bold \in R^{3+1}; afc_dyn := bold in R using afc mask
-            bold = mlperceptron.PerceptronRelease.bold_frames_mat_to_ImagingContext(ipr.patientdir);            
-            bold_img = bold.fourdfp.img;
-            Nxyz = [size(bold_img, 1) size(bold_img, 2) size(bold_img, 3)];
-            Nt = size(bold_img, 4);
-            afc_bool = afc_uthr.logical;
-            afc_dyn = zeros(Nt, 1);
-            for t = 1:Nt
-                bold_frame = bold_img(:,:,:,t);
-                afc_dyn(t) = mean(bold_frame(afc_bool));
-            end 
-            
-            % correlate afc_dyn in R with bold in R^{1+3}
-            bold_img = reshape(bold_img, [prod(Nxyz) Nt]);
-            c = corr(afc_dyn, bold_img');
-            c = reshape(c, Nxyz);
-            afc_corr = mlfourd.ImagingContext2(c, 'mmppix', [3 3 3], 'filename', 'afc_corr.4dfp.hdr');            
-            
-            popd(pwd0)
-        end
         function [img,frames,voxelsize] = read_T1_333(this)
             import mlperceptron.*
             [img,frames,voxelsize] = Fourdfp.read_4dfpimg_v1( ...
                 fullfile(this.patientdir, 'atlas', [this.patientid '_mpr_n1_333_t88.4dfp.img']));
+        end        
+        function s = similarity(this, x, y, varargin)
+            ip = inputParser;
+            addParameter(ip, 'kind', this.similarityKind, @ischar)
+            parse(ip, varargin{:})
+            ipr = ip.Results;
+            
+            switch lower(ipr.kind)
+                case 'ch'
+                    s = mlperceptron.PerceptronRelease.corr_new(x, y);
+                case 'kp'
+                    s = mlpark.SearchLight.corr_kp(x, y);
+                case 'kl'
+                    s = 1 - tanh(mlafc.AFC.kldiv(x, y)); % dissimilarity -> similarity
+                case 'js'
+                    s = 1 - tanh(mlafc.AFC.kldiv(x, y, 'js')); % dissimilarity -> similarity
+                otherwise
+                    error('mlafc:RuntimeError', 'AFC.similarity.ipr.kind->%s', ipr.kind)
+            end
         end
         function this = SL_fMRI_initialization(this, varargin)
             %% SL_fMRI_initialization

@@ -60,6 +60,7 @@ classdef EmilysAFC < mlafc.AFC
             addParameter(ip, 'cost', 'corratio', @ischar)
             addParameter(ip, 'dof', 12, @isscalar)
             addParameter(ip, 'allbrain', false, @islogical)
+            addParameter(ip, 'outTag', '_softmax', @ischar)
             parse(ip, varargin{:})
             ipr = ip.Results;
             ipr.dof = num2str(ipr.dof);
@@ -117,11 +118,11 @@ classdef EmilysAFC < mlafc.AFC
                     [~,r] = mlbash(sprintf('flirt -in %s -applyxfm -init %s%s -out %s%s %s -ref %s', ...
                         afc_prob_fn, ...
                         g{1}, '_anat_ave_on_FLIRT_111.mat', ...
-                        g{1}, '_afc_prob_111.nii.gz ', ...
+                        g{1}, [ipr.outTag '_111.nii.gz '], ...
                         opts1, ...
                         resection{1}));
                     
-                    qc = mlfourd.ImagingContext2([g{1} '_afc_prob_111.nii.gz']);
+                    qc = mlfourd.ImagingContext2([g{1} ipr.outTag '_111.nii.gz']);
                     qc.fsleyes(resection{1}, segmentation{1})
                 catch ME
                     warning('mlafc:RuntimeError', r)
@@ -187,12 +188,15 @@ classdef EmilysAFC < mlafc.AFC
             addParameter(ip, 'search', 45, @isscalar)
             addParameter(ip, 'finesearch', 10, @isscalar)
             addParameter(ip, 'allbrain', true, @islogical)
+            addParameter(ip, 'afcPrefix', 'AFC_product_mae', @ischar)
+            addParameter(ip, 'outTag', '_softmax', @ischar)
+            addParameter(ip, 'reuse', true, @islogical)
             parse(ip, varargin{:})
             ipr = ip.Results;
             ipr.dof = num2str(ipr.dof);
             
             for g = globFoldersT(ipr.toglob)  
-                if strcmp(g{1}, 'PT26') || strcmp(g{1}, 'PT28')
+                if strcmp(g{1}, 'PT26')
                     warning('mlafc:RuntimeWarning', ...
                         'EmilysAFC.buildSoftmaxOnResection:  manual registration needed for %s', g{1})
                     continue
@@ -201,9 +205,9 @@ classdef EmilysAFC < mlafc.AFC
                 pwd0 = pushd(g{1});
                 
                 % ensure nii.gz
-                if ~isfile('AFC_product.nii.gz')
-                    assert(isfile('AFC_product.4dfp.hdr'))
-                    ic = mlfourd.ImagingContext2('AFC_product.4dfp.hdr');
+                if ~isfile([ipr.afcPrefix '.nii.gz'])
+                    assert(isfile([ipr.afcPrefix '.4dfp.hdr']))
+                    ic = mlfourd.ImagingContext2([ipr.afcPrefix '.4dfp.hdr']);
                     ic.nifti.save()
                 end
                 
@@ -221,47 +225,50 @@ classdef EmilysAFC < mlafc.AFC
                 assert(~isempty(segmentation))
                 
                 try
-                    % flirt BOLD on MPR
-                    [~,r] = mlbash(sprintf('flirt -in %s%s -ref %s%s -out %s%s -omat %s%s %s', ...
-                        g{1}, '_anat_ave_t88_333_brain.nii.gz', ...
-                        g{1}, '_mpr1_on_TRIO_Y_NDC_111_brain.nii.gz', ...
-                        g{1}, '_anat_ave_t88_333_brain_on_mpr1_on_111.nii.gz', ...
-                        g{1}, '_anat_ave_t88_333_brain_on_mpr1_on_111.mat', ...
-                        opts_12));
-                    % flirt MPR on resection
-                    if ipr.allbrain
-                        [~,r] = mlbash(sprintf('flirt -in %s%s -ref %s -out %s%s -omat %s%s %s', ...
+                    if ~ipr.reuse || ~isfile([g{1} '_anat_ave_on_FLIRT_111.mat'])
+                        % flirt BOLD on MPR
+                        [~,r] = mlbash(sprintf('flirt -in %s%s -ref %s%s -out %s%s -omat %s%s %s', ...
+                            g{1}, '_anat_ave_t88_333_brain.nii.gz', ...
                             g{1}, '_mpr1_on_TRIO_Y_NDC_111_brain.nii.gz', ...
-                            resection{1}, ...
-                            g{1}, '_mpr1_on_FLIRT_111_brain.nii.gz', ...
-                            g{1}, '_mpr1_on_FLIRT_111.mat', ...
-                            opts));
-                    else
-                        [~,r] = mlbash(sprintf('flirt -in %s%s -ref %s -out %s%s -omat %s%s %s', ...
-                            g{1}, '_mpr1_on_TRIO_Y_NDC_111.nii.gz', ...
-                            resection{1}, ...
-                            g{1}, '_mpr1_on_FLIRT_111.nii.gz', ...
-                            g{1}, '_mpr1_on_FLIRT_111.mat', ...
-                            opts));
+                            g{1}, '_anat_ave_t88_333_brain_on_mpr1_on_111.nii.gz', ...
+                            g{1}, '_anat_ave_t88_333_brain_on_mpr1_on_111.mat', ...
+                            opts_12)); % opts_12
+                        
+                        % flirt MPR on resection
+                        if ipr.allbrain
+                            [~,r] = mlbash(sprintf('flirt -in %s%s -ref %s -out %s%s -omat %s%s %s', ...
+                                g{1}, '_mpr1_on_TRIO_Y_NDC_111_brain.nii.gz', ...
+                                resection{1}, ...
+                                g{1}, '_mpr1_on_FLIRT_111_brain.nii.gz', ...
+                                g{1}, '_mpr1_on_FLIRT_111.mat', ...
+                                opts));
+                        else
+                            [~,r] = mlbash(sprintf('flirt -in %s%s -ref %s -out %s%s -omat %s%s %s', ...
+                                g{1}, '_mpr1_on_TRIO_Y_NDC_111.nii.gz', ...
+                                resection{1}, ...
+                                g{1}, '_mpr1_on_FLIRT_111.nii.gz', ...
+                                g{1}, '_mpr1_on_FLIRT_111.mat', ...
+                                opts));
+                        end
+
+                        % compose xfm
+                        [~,r] = mlbash(sprintf('convert_xfm -omat %s%s -concat %s%s %s%s', ...
+                            g{1}, '_anat_ave_on_FLIRT_111.mat', ...
+                            g{1}, '_mpr1_on_FLIRT_111.mat ', ...
+                            g{1}, '_anat_ave_t88_333_brain_on_mpr1_on_111.mat'));
                     end
 
-                    % compose xfm
-                    [~,r] = mlbash(sprintf('convert_xfm -omat %s%s -concat %s%s %s%s', ...
-                        g{1}, '_anat_ave_on_FLIRT_111.mat', ...
-                        g{1}, '_mpr1_on_FLIRT_111.mat ', ...
-                        g{1}, '_anat_ave_t88_333_brain_on_mpr1_on_111.mat'));
-
                     % flirt afc_prob on resection
-                    afc_prob_fn = 'AFC_product.nii.gz';
-                    assert(isfile(afc_prob_fn))
+                    afc_fn = [ipr.afcPrefix '.nii.gz'];
+                    assert(isfile(afc_fn))
                     [~,r] = mlbash(sprintf('flirt -in %s -applyxfm -init %s%s -out %s%s %s -ref %s', ...
-                        afc_prob_fn, ...
+                        afc_fn, ...
                         g{1}, '_anat_ave_on_FLIRT_111.mat', ...
-                        g{1}, '_afc_prob_111.nii.gz ', ...
+                        g{1}, [ipr.outTag '_111.nii.gz '], ...
                         opts_apply, ...
                         resection{1}));
                     
-                    qc = mlfourd.ImagingContext2([g{1} '_afc_prob_111.nii.gz']);
+                    qc = mlfourd.ImagingContext2([g{1} ipr.outTag '_111.nii.gz']);
                     qc.fsleyes(resection{1}, segmentation{1})
                 catch ME
                     warning('mlafc:RuntimeError', r)
@@ -270,10 +277,54 @@ classdef EmilysAFC < mlafc.AFC
                 
                 popd(pwd0)
             end
-        end         
+        end     
+        function calc_boxplot(varargin)
+            ip = inputParser;
+            addOptional(ip, 'toglob', 'PT*', @ischar)
+            addParameter(ip, 'outTag', '_softmax', @ischar)
+            parse(ip, varargin{:})
+            ipr = ip.Results;
+            globbed = globFoldersT(ipr.toglob);
+            
+            gm3d = mlfourd.ImagingContext2(fullfile(getenv('REFDIR'), 'gm3d.nii.gz'));
+            gm3d = gm3d.binarized();
+            Nvxl = dipsum(gm3d);
+            Npts = length(globbed);
+            data = zeros(Nvxl, Npts, 'single');
+            
+            for ig = 1:Npts
+                pwd0 = pushd(globbed{ig});                
+                afc_prob = mlfourd.ImagingContext2('AFC_product.nii.gz'); % [g{1} ipr.outTag '_111.nii.gz']);                
+                %afc_prob = afc_prob.thresh(0.001);
+                afc_prob = afc_prob .* gm3d;
+                img = afc_prob.nifti.img;
+                fprintf('gm sum -> %g\n', dipsum(img))
+                data(:,ig) = reshape(img(logical(gm3d)), [Nvxl 1]);                
+                popd(pwd0)
+            end
+
+            h = figure;
+            %labels = {'Ia' 'Ia' 'IV' 'Ia' 'III' 'Ia' 'IIa' 'IV' 'Ia' 'II'};
+            labels = {'Ia' 'IV' 'Ia' 'IIa' 'IV' 'Ia'};
+            v = boxplot(data, 'Labels', labels, 'Notch', 'on');
+            ax = gca;
+            ax.YRuler.Exponent = 0;
+            %ytickformat('%.3f')
+            set(gca, 'fontsize', 18)
+            ylabel('probability dissimilarity', 'FontSize', 24)
+            xlabel('patient''s Engel class', 'FontSize', 24)
+
+            savefig(h, ...
+                sprintf('EmilysAFC_calc_boxplot_%ipts.fig', Npts))
+            figs = get(0, 'children');
+            saveas(figs(1), ...
+                sprintf('EmilysAFC_calc_boxplot_%ipts.png', Npts))
+%                close(figs(1))
+        end
         function calc_dice(varargin)
             ip = inputParser;
             addOptional(ip, 'toglob', 'PT*', @ischar)
+            addParameter(ip, 'outTag', '_softmax', @ischar)
             parse(ip, varargin{:})
             ipr = ip.Results;
                         
@@ -282,7 +333,7 @@ classdef EmilysAFC < mlafc.AFC
                 
                 segmentation = globT([g{1} '_*_segmentation_final_111.nii.gz']);
                 seg = mlfourd.ImagingContext2(segmentation{1});
-                afc_prob = mlfourd.ImagingContext2([g{1} '_afc_prob_111.nii.gz']);
+                afc_prob = mlfourd.ImagingContext2([g{1} ipr.outTag '_111.nii.gz']);
                 gm = mlfourd.ImagingContext2(fullfile(getenv('REFDIR'), 'gm3d_111.nii.gz')); % no cerebellum
                 gm = gm.masked(double(afc_prob.numgt(0.008))); % 0.008 is the left tail of histograms
 %                thr = 0.00891826; % mean of modes for Engel I, II
@@ -299,32 +350,40 @@ classdef EmilysAFC < mlafc.AFC
         function calc_histogram(varargin)
             ip = inputParser;
             addOptional(ip, 'toglob', 'PT*', @ischar)
+            addParameter(ip, 'outTag', '_softmax', @ischar)
             parse(ip, varargin{:})
             ipr = ip.Results;
+            
+            gm3d = mlfourd.ImagingContext2(fullfile(getenv('REFDIR'), 'gm3d.nii.gz'));
+            gm3d = gm3d.binarized();
                         
             for g = globFoldersT(ipr.toglob)
                 pwd0 = pushd(g{1});
                 
-                afc_prob = mlfourd.ImagingContext2([g{1} '_afc_prob_111.nii.gz']);                
+                afc_prob = mlfourd.ImagingContext2('AFC_product.nii.gz'); % [g{1} ipr.outTag '_111.nii.gz']);                
                 afc_prob = afc_prob.thresh(0.001);
+                afc_prob = afc_prob .* gm3d;
                 h = figure;
                 histo = histogram(afc_prob, 'DisplayStyle', 'stairs', 'LineWidth', 2);
                 ax = gca;
                 ax.XRuler.Exponent = 0;
-                xtickformat('%.3f')
+                %xtickformat('%.3f')
                 set(gca, 'fontsize', 12)
+                xlim([0.001 0.004])
+                ylim([0 3000])
                 xlabel('probability dissimilarity', 'FontSize', 18)
                 ylabel('number voxels', 'FontSize', 18)
-                m = mode(afc_prob.nifti.img(logical(afc_prob)));
-                s = sprintf('mode = %.4f\nfull width half max = %.4f', m, fwhm(histo)); 
+                [~,idx] = max(histo.Values);
+                m = histo.BinEdges(idx + 1);
+                s = sprintf('mode = %g\nfull width half max = %g', m, fwhm(histo)); 
                 annotation('textbox', [0.16 .2 .5 0.1], 'String', s, 'FitBoxToText', 'on', 'FontSize', 16, 'LineStyle', 'none')
                 
                 savefig(h, ...
-                    sprintf('EmilysAFC_calc_histogram_%s_afc_prob_111.fig', g{1}))
+                    sprintf('EmilysAFC_calc_histogram_%s_AFC_product.fig', g{1}))
                 figs = get(0, 'children');
                 saveas(figs(1), ...
-                    sprintf('EmilysAFC_calc_histogram_%s_afc_prob_111.png', g{1}))
-                close(figs(1))
+                    sprintf('EmilysAFC_calc_histogram_%s_AFC_product.png', g{1}))
+%                close(figs(1))
                 
                 popd(pwd0)
             end
@@ -339,6 +398,7 @@ classdef EmilysAFC < mlafc.AFC
         function calc_jsdiv(varargin)
             ip = inputParser;
             addOptional(ip, 'toglob', 'PT*', @ischar)
+            addParameter(ip, 'outTag', '_softmax', @ischar)
             parse(ip, varargin{:})
             ipr = ip.Results;
                         
@@ -347,7 +407,7 @@ classdef EmilysAFC < mlafc.AFC
                 
                 segmentation = globT([g{1} '_*_segmentation_final_111.nii.gz']);
                 seg = mlfourd.ImagingContext2(segmentation{1});
-                afc_prob = mlfourd.ImagingContext2([g{1} '_afc_prob_111.nii.gz']);
+                afc_prob = mlfourd.ImagingContext2([g{1} ipr.outTag '_111.nii.gz']);
                 gm = mlfourd.ImagingContext2(fullfile(getenv('REFDIR'), 'gm3d_111.nii.gz')); % no cerebellum
 %                gm = gm.masked(double(afc_prob.numgt(0.008))); % 0.008 is the left tail of histograms                
                 jsdiv = afc_prob.jsdiv(seg, gm);
@@ -359,6 +419,7 @@ classdef EmilysAFC < mlafc.AFC
         function calc_perfcurve(varargin)
             ip = inputParser;
             addOptional(ip, 'toglob', 'PT*', @ischar)
+            addParameter(ip, 'outTag', '_softmax', @ischar)
             parse(ip, varargin{:})
             ipr = ip.Results;
                         
@@ -367,7 +428,7 @@ classdef EmilysAFC < mlafc.AFC
                 
                 segmentation = globT([g{1} '_*_segmentation_final_111.nii.gz']);
                 seg = mlfourd.ImagingContext2(segmentation{1});
-                afc_prob = mlfourd.ImagingContext2([g{1} '_afc_prob_111.nii.gz']);
+                afc_prob = mlfourd.ImagingContext2([g{1} ipr.outTag '_111.nii.gz']);
                 gm = mlfourd.ImagingContext2(fullfile(getenv('REFDIR'), 'gm3d_111.nii.gz')); % no cerebellum
                 msk = logical(gm);
                                 
@@ -386,18 +447,17 @@ classdef EmilysAFC < mlafc.AFC
                 popd(pwd0)
             end
         end
-        function calc_swarmchart(varargin)
-        end
         function calc_var(varargin)
             ip = inputParser;
             addOptional(ip, 'toglob', 'PT*', @ischar)
+            addParameter(ip, 'outTag', '_softmax', @ischar)
             parse(ip, varargin{:})
             ipr = ip.Results;
                         
             for g = globFoldersT(ipr.toglob)
                 pwd0 = pushd(g{1});
                 
-                afc_prob = mlfourd.ImagingContext2([g{1} '_afc_prob_111.nii.gz']);
+                afc_prob = mlfourd.ImagingContext2([g{1} ipr.outTag '_111.nii.gz']);
                 v = var(afc_prob.nifti.img(logical(afc_prob.numgt(0.001))));
                 fprintf('var(%s) = %g\n',afc_prob.fileprefix, v)
                 fprintf('std(%s) = %g\n',afc_prob.fileprefix, sqrt(v))
@@ -406,6 +466,64 @@ classdef EmilysAFC < mlafc.AFC
             end
         end
         function calc_violinplot(varargin)
+            ip = inputParser;
+            addOptional(ip, 'toglob', 'PT*', @ischar)
+            addParameter(ip, 'outTag', '_softmax', @ischar)
+            parse(ip, varargin{:})
+            ipr = ip.Results;
+            globbed = globFoldersT(ipr.toglob);
+            reg = mlafc.AFCRegistry.instance();
+            
+            gm3d = mlfourd.ImagingContext2(fullfile(getenv('REFDIR'), 'gm3d.nii.gz'));
+            gm3d = gm3d.binarized();
+            Nvxl = dipsum(gm3d);
+            Npts = length(globbed);
+            data = zeros(Nvxl, Npts, 'single');
+            
+            if strcmp(computer, 'MACI64')
+                home = '/Users/jjlee/Box/Leuthardt_Epilepsy_Project/Segmentations_06_and_07_2020';
+            else
+                home = '/data/nil-bluearc/shimony/jjlee/FocalEpilepsy';
+            end
+            for ig = 1:Npts
+                try
+                    cd(fullfile(home, globbed{ig}));
+                    afc_prob = mlfourd.ImagingContext2(sprintf('AFC_product%s.nii.gz', reg.similarityTag)); % [g{1} ipr.outTag '_111.nii.gz']);                
+                    %afc_prob = afc_prob.thresh(0.001);
+                    %afc_prob = afc_prob .* gm3d;
+                    img = afc_prob.nifti.img;
+                    fprintf('gm sum -> %g\n', dipsum(img))
+                    data(:,ig) = reshape(img(logical(gm3d)), [Nvxl 1]); 
+                catch ME
+                    handwarning(ME)
+                end
+            end
+            cd(home)
+
+            h = figure;
+            %labels = globbed;
+            %labels = {'Ia' 'Ia' 'IV' 'Ia' 'III' 'Ia' 'IIa' 'IV' 'Ia' 'II'};
+            %labels = {'PT15 (Ia)' 'PT26 (IV)' 'PT28 (Ia)' 'PT29 (IV)' 'PT34 (IIa)' 'PT35 (IV)' 'PT36 (Ia)'};  
+            labels = {'1 (Ia)' '2 (IV)' '3 (Ia)' '4 (IV)' '5 (IIa)' '6 (IV)' '7 (Ia)'};            
+            ordering = [1 3 7 5 4 2 6]; % pt15, pt28, pt36, pt34, pt29, pt26, p35
+            data(:,:) = data(:,ordering);
+            labels = labels(ordering);
+            
+            v = violinplot(data, labels, 'ShowData', false, 'ShowNotches', false);
+            ylim([0.0018 0.0023])
+            ax = gca;
+            ax.YRuler.Exponent = 0;
+            %ytickformat('%.3f')
+            set(gca, 'fontsize', 14)
+            ylabel('probability dissimilarity', 'FontSize', 18)
+            xlabel('patient ID (Engel class)', 'FontSize', 18)
+
+            savefig(h, ...
+                sprintf('EmilysAFC_calc_violinplot%s_%ipts.fig', reg.similarityTag, Npts))
+            figs = get(0, 'children');
+            saveas(figs(1), ...
+                sprintf('EmilysAFC_calc_violinplot%s_%ipts.png', reg.similarityTag, Npts))
+%                close(figs(1))
         end
         function [sim,featic,funcic] = calcdice__(featdata, funcdata, varargin)
             
@@ -452,6 +570,7 @@ classdef EmilysAFC < mlafc.AFC
         function visualizeAfcProb(varargin)
             ip = inputParser;
             addOptional(ip, 'toglob', 'PT*', @ischar)
+            addParameter(ip, 'outTag', '_softmax', @ischar)
             parse(ip, varargin{:})
             ipr = ip.Results;
                         
@@ -465,9 +584,11 @@ classdef EmilysAFC < mlafc.AFC
                 edge_seg = mlfourd.ImagingFormatContext(segmentation{1});
                 edge_seg.img = edge3(edge_seg.img, 'approxcanny', 0.2);
                 edge_seg.fileprefix = [strrep(segmentation{1}, '.nii.gz', '') '_edge'];
-%                edge_seg.save()
+                if ~isfile(edge_seg.fqfilename)
+                    edge_seg.save()
+                end
                 
-                qc = mlfourd.ImagingContext2([g{1} '_afc_prob_111.nii.gz']);
+                qc = mlfourd.ImagingContext2([g{1} ipr.outTag '_111.nii.gz']);
                 qc.fsleyes(resection{1}, edge_seg.filename)
                 
                 popd(pwd0)
@@ -476,25 +597,45 @@ classdef EmilysAFC < mlafc.AFC
         
         %% UTILITIES
         
-        function ic = bet(ic0, betFrac)
+        function ic = bet(varargin)
+            ip = inputParser;
+            addRequired(ip, 'obj', @(x) ~isempty(x))
+            addOptional(ip, 'betFrac', 0.5, @isscalar)
+            parse(ip, varargin{:})
+            ipr = ip.Results;
+            ic0 = mlafc.EmilysAFC.imagingContextNifti(ipr.obj);
+            if ~isfile(ic0.fqfilename)
+                ic0.save()
+            end
+            
             bin = fullfile(getenv('FSLDIR'), 'bin', 'bet');
             if contains(ic0.fileprefix, 'mpr')
                 t2_fqfp = strrep(ic0.fqfp, 'mpr1', 't2w');
                 assert(isfile([t2_fqfp '.nii.gz']))
-                mlbash(sprintf('%s %s %s_brain -A2 %s -f %g -g 0 -m', bin, ic0.fqfp, ic0.fqfp, t2_fqfp, betFrac))
+                mlbash(sprintf('%s %s %s_brain -A2 %s -f %g -g 0 -m', bin, ic0.fqfp, ic0.fqfp, t2_fqfp, ipr.betFrac))
                 BET = fullfile(ic0.filepath, 'BET', '');
                 ensuredir(BET)
                 movefile(fullfile(ic0.filepath, '*_mask.*'), BET, 'f')
                 movefile(fullfile(ic0.filepath, '*_mesh.*'), BET, 'f')
             else
-                mlbash(sprintf('%s %s %s_brain -R -f %i -g 0 -m', bin, ic0.fqfp, ic0.fqfp, betFrac))
+                mlbash(sprintf('%s %s %s_brain -R -f %i -g 0 -m', bin, ic0.fqfp, ic0.fqfp, ipr.betFrac))
             end
             ic = mlfourd.ImagingContext2([ic0.fqfp '_brain.nii.gz']);
             ic.selectImagingFormatTool()
         end
-        function ic = betZ(ic0, betFrac)
+        function ic = betZ(varargin)
+            ip = inputParser;
+            addRequired(ip, 'obj', @(x) ~isempty(x))
+            addOptional(ip, 'betFrac', 0.5, @isscalar)
+            parse(ip, varargin{:})
+            ipr = ip.Results;
+            ic0 = mlafc.EmilysAFC.imagingContextNifti(ipr.obj);
+            if ~isfile(ic0.fqfilename)
+                ic0.save()
+            end
+            
             bin = fullfile(getenv('FSLDIR'), 'bin', 'bet');
-            mlbash(sprintf('%s %s %s_brain -Z -f %i -g 0 -m', bin, ic0.fqfp, ic0.fqfp, betFrac))
+            mlbash(sprintf('%s %s %s_brain -Z -f %i -g 0 -m', bin, ic0.fqfp, ic0.fqfp, ipr.betFrac))
             ic = mlfourd.ImagingContext2([ic0.fqfp '_brain.nii.gz']);
             ic.selectImagingFormatTool()
         end
@@ -507,6 +648,31 @@ classdef EmilysAFC < mlafc.AFC
             ic.selectImagingFormatTool()
             matfn = [out_fqfp '.mat'];
         end
+        function ic = imagingContextNifti(varargin)
+            ip = inputParser;
+            addRequired(ip, 'obj', @(x) ~isempty(x))
+            parse(ip, varargin{:})
+            ipr = ip.Results;
+            ipr.obj = mlfourd.ImagingContext2(ipr.obj);
+            ipr.obj = mlfourd.ImagingContext2(ipr.obj.nifti);
+            fp = ipr.obj.fileprefix;
+            
+            if contains(fp, '111')
+                nii = mlfourd.ImagingFormatContext(fullfile(getenv('REFDIR'), '711-2B_111.nii.gz'));
+            elseif contains(fp, '222')
+                nii = mlfourd.ImagingFormatContext(fullfile(getenv('REFDIR'), '711-2B_222.nii.gz'));
+            elseif contains(fp, '333')
+                nii = mlfourd.ImagingFormatContext(fullfile(getenv('REFDIR'), '711-2B_333.nii.gz'));
+            else
+                ic = ipr.obj;
+                return
+            end
+            nii.img = ipr.obj.nifti.img;
+            nii.filepath = ipr.obj.filepath;
+            nii.fileprefix = ipr.obj.fileprefix;
+            ic = mlfourd.ImagingContext2(nii);
+        end
+        
         function ic = applyxfm(ic0, mat, out_fqfp, icref)
             bin = fullfile(getenv('FSLDIR'), 'bin', 'flirt');
             mlbash(sprintf('%s -in %s -applyxfm -init %s -out %s -paddingsize 0.0 -interp nearestneighbour -ref %s', bin, ic0.fqfp, mat, out_fqfp, icref.fqfp))
