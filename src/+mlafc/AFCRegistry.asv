@@ -116,17 +116,17 @@ classdef AFCRegistry < handle
             %g = '_tanhmdc';
         end
         function g = get.sl_fc_gsp_mat(this)
-            g = fullfile(this.workpath, ...
+            g = fullfile(getenv('WORK'), ...
                 sprintf('sl_fc_gsp_radius%i_stride%i_N%i%s%s.mat', ...
                 this.sphere_radius, this.grid_spacing, this.ref_count, this.tanh_tag, this.tag));
         end
         function g = get.sl_fc_gsp_sum_prob_mat(this)
-            g = fullfile(this.workpath, ...
+            g = fullfile(getenv('WORK'), ...
                 sprintf('sl_fc_gsp_sum_prob_radius%i_stride%i_N%i%s%s%s.mat', ...
                 this.sphere_radius, this.grid_spacing, this.ref_count, this.tanh_tag, this.tag, this.similarityTag));
         end
         function g = get.sl_fc_mean_mat(this)
-            g = fullfile(this.workpath, ...
+            g = fullfile(getenv('WORK'), ...
                 sprintf('sl_fc_mean_radius%i_stride%i_N%i%s%s.mat', ...
                 this.sphere_radius, this.grid_spacing, this.ref_count, this.tanh_tag, this.tag));
         end
@@ -139,19 +139,20 @@ classdef AFCRegistry < handle
                 g = '';
             end
         end
-        function g = get.workpath(~)
+        function g = get.workpath(this)
             if contains(hostname, 'precuneal')
-                g = fullfile(getenv('HOME'), 'Box', 'Leuthardt_Epilepsy_Project', 'Segmentations_06_and_07_2020', '');
+                g = fullfile(getenv('HOME'), '/';
             else
                 g = '/data/nil-bluearc/shimony/jjlee/FocalEpilepsy';
             end
+        %WORK = 
         end
         
         %%        
         
         function m = sl_fc_gsp_ref_mat(this, ref)
             assert(isscalar(ref))
-            m = fullfile(this.workpath, ...
+            m = fullfile(getenv('WORK'), ...
                 sprintf('sl_fc_gsp%i_radius%i_stride%i_N%i%s.mat', ...
                 ref, this.sphere_radius, this.grid_spacing, this.ref_count, this.tag));
         end

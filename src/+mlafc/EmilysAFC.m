@@ -1,4 +1,4 @@
-classdef EmilysAFC < mlafc.AFC
+classdef EmilysAFC < mlafc.KaysAFC
 	%% EMILYSAFC  
 
 	%  $Revision$
@@ -564,9 +564,6 @@ classdef EmilysAFC < mlafc.AFC
             sim = dice(logical(featdata), logical(funcdata));  
             fprintf('mlafc.AFC.calcdice.sim -> %g\n', sim)
         end
-        function img = flip12(img)
-            img = flip(flip(img, 1), 2);
-        end
         function visualizeAfcProb(varargin)
             ip = inputParser;
             addOptional(ip, 'toglob', 'PT*', @ischar)
@@ -596,90 +593,7 @@ classdef EmilysAFC < mlafc.AFC
         end
         
         %% UTILITIES
-        
-        function ic = bet(varargin)
-            ip = inputParser;
-            addRequired(ip, 'obj', @(x) ~isempty(x))
-            addOptional(ip, 'betFrac', 0.5, @isscalar)
-            parse(ip, varargin{:})
-            ipr = ip.Results;
-            ic0 = mlafc.EmilysAFC.imagingContextNifti(ipr.obj);
-            if ~isfile(ic0.fqfilename)
-                ic0.save()
-            end
-            
-            bin = fullfile(getenv('FSLDIR'), 'bin', 'bet');
-            if contains(ic0.fileprefix, 'mpr')
-                t2_fqfp = strrep(ic0.fqfp, 'mpr1', 't2w');
-                assert(isfile([t2_fqfp '.nii.gz']))
-                mlbash(sprintf('%s %s %s_brain -A2 %s -f %g -g 0 -m', bin, ic0.fqfp, ic0.fqfp, t2_fqfp, ipr.betFrac))
-                BET = fullfile(ic0.filepath, 'BET', '');
-                ensuredir(BET)
-                movefile(fullfile(ic0.filepath, '*_mask.*'), BET, 'f')
-                movefile(fullfile(ic0.filepath, '*_mesh.*'), BET, 'f')
-            else
-                mlbash(sprintf('%s %s %s_brain -R -f %i -g 0 -m', bin, ic0.fqfp, ic0.fqfp, ipr.betFrac))
-            end
-            ic = mlfourd.ImagingContext2([ic0.fqfp '_brain.nii.gz']);
-            ic.selectImagingFormatTool()
-        end
-        function ic = betZ(varargin)
-            ip = inputParser;
-            addRequired(ip, 'obj', @(x) ~isempty(x))
-            addOptional(ip, 'betFrac', 0.5, @isscalar)
-            parse(ip, varargin{:})
-            ipr = ip.Results;
-            ic0 = mlafc.EmilysAFC.imagingContextNifti(ipr.obj);
-            if ~isfile(ic0.fqfilename)
-                ic0.save()
-            end
-            
-            bin = fullfile(getenv('FSLDIR'), 'bin', 'bet');
-            mlbash(sprintf('%s %s %s_brain -Z -f %i -g 0 -m', bin, ic0.fqfp, ic0.fqfp, ipr.betFrac))
-            ic = mlfourd.ImagingContext2([ic0.fqfp '_brain.nii.gz']);
-            ic.selectImagingFormatTool()
-        end
-        function [ic,matfn] = flirt(dof, ic0, icref, out_fqfp)
-            assert(isnumeric(dof))
-            bin = fullfile(getenv('FSLDIR'), 'bin', 'flirt');
-            mlbash(sprintf('%s -in %s -ref %s -out %s -omat %s.mat -bins 256 -cost corratio -searchrx -90 90 -searchry -90 90 -searchrz -90 90 -dof %i -interp trilinear', bin, ic0.fqfp, icref.fqfp, out_fqfp, out_fqfp, dof))
-            %flirt -in PT15_4_FLIRT_111_brain.nii.gz -ref PT15_mpr1_111_brain.nii.gz -out PT15_4_FLIRT_on_mpr1_111_brain.nii.gz -omat PT15_4_FLIRT_on_mpr1_111_brain.mat -bins 256 -cost corratio -searchrx -90 90 -searchry -90 90 -searchrz -90 90 -dof 12  -interp trilinear
-            ic = mlfourd.ImagingContext2([out_fqfp '.nii.gz']);
-            ic.selectImagingFormatTool()
-            matfn = [out_fqfp '.mat'];
-        end
-        function ic = imagingContextNifti(varargin)
-            ip = inputParser;
-            addRequired(ip, 'obj', @(x) ~isempty(x))
-            parse(ip, varargin{:})
-            ipr = ip.Results;
-            ipr.obj = mlfourd.ImagingContext2(ipr.obj);
-            ipr.obj = mlfourd.ImagingContext2(ipr.obj.nifti);
-            fp = ipr.obj.fileprefix;
-            
-            if contains(fp, '111')
-                nii = mlfourd.ImagingFormatContext(fullfile(getenv('REFDIR'), '711-2B_111.nii.gz'));
-            elseif contains(fp, '222')
-                nii = mlfourd.ImagingFormatContext(fullfile(getenv('REFDIR'), '711-2B_222.nii.gz'));
-            elseif contains(fp, '333')
-                nii = mlfourd.ImagingFormatContext(fullfile(getenv('REFDIR'), '711-2B_333.nii.gz'));
-            else
-                ic = ipr.obj;
-                return
-            end
-            nii.img = ipr.obj.nifti.img;
-            nii.filepath = ipr.obj.filepath;
-            nii.fileprefix = ipr.obj.fileprefix;
-            ic = mlfourd.ImagingContext2(nii);
-        end
-        
-        function ic = applyxfm(ic0, mat, out_fqfp, icref)
-            bin = fullfile(getenv('FSLDIR'), 'bin', 'flirt');
-            mlbash(sprintf('%s -in %s -applyxfm -init %s -out %s -paddingsize 0.0 -interp nearestneighbour -ref %s', bin, ic0.fqfp, mat, out_fqfp, icref.fqfp))
-            %flirt -in PT15_4_seg_111_nopriorsurg.nii.gz -applyxfm -init PT15_4_FLIRT_on_mpr1_111_brain.mat -out PT15_4_seg_111_nopriorsurg_on_mpr_111.nii.gz -paddingsize 0.0 -interp nearestneighbour -ref PT15_mpr1_on_TRIO_Y_NDC_111.nii.gz
-            ic = mlfourd.ImagingContext2([out_fqfp '.nii.gz']);
-            ic.selectImagingFormatTool()
-        end
+                
         function [icres,icseg] = antsToMprDeformed(icres0, icseg0)
             %% see also:
             %  https://github.com/ANTsX/ANTs/wiki/Forward-and-inverse-warps-for-warping-images,-pointsets-and-Jacobians
@@ -751,7 +665,7 @@ classdef EmilysAFC < mlafc.AFC
         %% 
         
  		function this = EmilysAFC(varargin)
- 			this = this@mlafc.AFC(varargin{:});
+ 			this = this@mlafc.KaysAFC(varargin{:});
             
             this.containerResections = this.buildContainerResections();
             this.containerMprs = this.buildContainerMprs();
@@ -1005,8 +919,7 @@ classdef EmilysAFC < mlafc.AFC
                 this.rescueOriginator333(item{1})
             end
             popd(pwd0)
-        end
-        
+        end        
     end
 
 	%  Created with Newcl by John J. Lee after newfcn by Frank Gonzalez-Morphy

@@ -41,29 +41,29 @@ classdef Test_AFC < matlab.unittest.TestCase
         function test_radius(this)
             setenv('WORK', this.WORK)
             cd(this.WORK)
+%             jafc = mlafc.JohnsAFC( ...
+%                 'sphere_radius', 4, ...
+%                 'grid_spacing', 5, ...
+%                 'ref_count', 500);
+%             jafc = jafc.explore_fc();
+%             disp(jafc)
+%             ic = mlafc.JohnsAFC.slfcMatToIC('sl_fc_mean_radius4_stride5_N500_JohnsAFC.mat', 'sl_fc_mean');
+%             ic.save()
             jafc = mlafc.JohnsAFC( ...
-                'sphere_radius', 5, ...
-                'grid_spacing', 3, ...
-                'ref_count', 10);
+                'sphere_radius', 1, ...
+                'grid_spacing', 2, ...
+                'ref_count', 500);
             jafc = jafc.explore_fc();
             disp(jafc)
-            ic = mlafc.JohnsAFC.slfcMatToIC('sl_fc_mean_radius5_stride3_N10_JohnsAFC.mat', 'sl_fc_mean');
+            ic = mlafc.JohnsAFC.slfcMatToIC('sl_fc_mean_radius1_stride2_N500_JohnsAFC.mat', 'sl_fc_mean');
             ic.save()
             jafc = mlafc.JohnsAFC( ...
                 'sphere_radius', 3, ...
-                'grid_spacing', 3, ...
-                'ref_count', 10);
+                'grid_spacing', 4, ...
+                'ref_count', 500);
             jafc = jafc.explore_fc();
             disp(jafc)
-            ic = mlafc.JohnsAFC.slfcMatToIC('sl_fc_mean_radius3_stride3_N10_JohnsAFC.mat', 'sl_fc_mean');
-            ic.save()
-            jafc = mlafc.JohnsAFC( ...
-                'sphere_radius', 2, ...
-                'grid_spacing', 3, ...
-                'ref_count', 10);
-            jafc = jafc.explore_fc();
-            disp(jafc)
-            ic = mlafc.JohnsAFC.slfcMatToIC('sl_fc_mean_radius2_stride3_N10_JohnsAFC.mat', 'sl_fc_mean');
+            ic = mlafc.JohnsAFC.slfcMatToIC('sl_fc_mean_radius3_stride4_N500_JohnsAFC.mat', 'sl_fc_mean');
             ic.save()
         end
         function test_explore_fc(this)
@@ -78,6 +78,41 @@ classdef Test_AFC < matlab.unittest.TestCase
             ic = mlafc.JohnsAFC.slfcMatToIC('sl_fc_mean_radius2_stride3_N500_JohnsAFC.mat', 'sl_fc_mean');
             ic.save()
             ic.fsleyes()
+        end
+        function test_explore_fc2(this)
+            setenv('WORK', this.WORK)
+            cd(this.WORK)
+            jafc = mlafc.JohnsAFC( ...
+                'sphere_radius', 2, ...
+                'grid_spacing', 3, ...
+                'ref_count', 500);
+            jafc = jafc.explore_fc2();
+            disp(jafc)
+            ic = mlafc.JohnsAFC.slfcMatToIC('sl_fc_mean_radius2_stride3_N500_tanh_JohnsAFC.mat', 'sl_fc_mean');
+            ic.save()
+            ic.fsleyes()
+        end
+        function test_make_sl_fc_intermediates(this)
+            setenv('WORK', this.WORK)
+            cd(this.WORK)
+            pts = globFoldersT('PT*');
+            for ip = 1:length(pts)
+                if strcmp(pts{ip}, 'PTmore')
+                    continue
+                end
+                try
+                    pdir = fullfile(getenv('WORK'), pts{ip}, '');
+                    pwd0 = pushd(pdir);
+                    jafc = mlafc.JohnsAFC( ...
+                        'sphere_radius', 2, ...
+                        'grid_spacing', 3, ...
+                        'ref_count', 500);
+                    jafc = jafc.make_sl_fc_intermediates(pwd, pts{ip});
+                    popd(pwd0)
+                catch ME
+                    handwarning(ME)
+                end
+            end            
         end
         function test_makeSoftmax(this)
             setenv('WORK', this.WORK)
@@ -95,6 +130,25 @@ classdef Test_AFC < matlab.unittest.TestCase
                         'grid_spacing', 3, ...
                         'ref_count', 500);
                     jafc = jafc.makeSoftmax(pwd, pts{ip});
+                    popd(pwd0)
+                catch ME
+                    handwarning(ME)
+                end
+            end            
+        end
+        function test_makeSoftmaxMsc(this)
+            setenv('WORK', this.WORK)
+            cd(this.WORK)
+            pts = globFoldersT('MSC*');
+            for ip = 1:length(pts)
+                try
+                    pdir = fullfile(getenv('WORK'), pts{ip}, '');
+                    pwd0 = pushd(pdir);
+                    jafc = mlafc.JohnsAFC( ...
+                        'sphere_radius', 2, ...
+                        'grid_spacing', 3, ...
+                        'ref_count', 500);
+                    jafc = jafc.makeSoftmax(pwd, pts{ip}, 'Nframes', 2307);
                     jafc.product.save() % .4dfp.*
                     jafc.product.nifti.save() % .nii.gz
                     popd(pwd0)
@@ -103,6 +157,45 @@ classdef Test_AFC < matlab.unittest.TestCase
                 end
             end            
         end
+        function test_visualize_sl_fc(this)
+            setenv('WORK', this.WORK)
+            cd(this.WORK)
+            pts = globFoldersT('PT*');
+            for ip = 1:length(pts)
+                if strcmp(pts{ip}, 'PTmore')
+                    continue
+                end
+                try
+                    pdir = fullfile(getenv('WORK'), pts{ip}, '');
+                    pwd0 = pushd(pdir);
+                    jafc = mlafc.JohnsAFC( ...
+                        'sphere_radius', 2, ...
+                        'grid_spacing', 3, ...
+                        'ref_count', 500);
+                    jafc = jafc.makeSoftmax(pwd, pts{ip});
+                    jafc.visualize_sl_fc();
+                    popd(pwd0)
+                catch ME
+                    handwarning(ME)
+                end
+            end 
+        end
+        function test_fullArrToGlmmskArr(this)
+            atl = mlfourd.ImagingFormatContext('711-2B_333.nii.gz');
+            farr = reshape(flip(flip(atl.img,1),2), [1 48*64*48]);
+            garr = mlafc.JohnsAFC.fullArrToGlmmskArr(farr);
+            farr = mlafc.JohnsAFC.glmmskArrToFullArr(garr);
+            atl.img = reshape(farr, [48 64 48]);
+            atl.img = flip(flip(atl.img, 1), 2);
+            atl.fileprefix = 'test';
+            atl.fsleyes
+        end
+        function test_x333_to_xGlmmskArr(this)
+            this.assertEqual(mlafc.JohnsAFC.x333_to_xGlmmskArr([23 48 21]), 25878)
+            this.assertEqual(mlafc.JohnsAFC.x333_to_xGlmmskArr([36 48 21]), 25865)
+            this.assertEqual(mlafc.JohnsAFC.x333_to_xGlmmskArr([11 14 35]), 55267)
+        end
+        
         function test_make_SLfMRI_init(this)
             setenv('WORK', this.WORK)
             cd(this.WORK)
@@ -299,7 +392,7 @@ classdef Test_AFC < matlab.unittest.TestCase
 		function setupAFC(this)
  			import mlafc.*;
             setenv('WORK', this.WORK)
- 			this.testObj_ = KaysAFC;
+ 			%this.testObj_ = KaysAFC;
  		end
 	end
 
