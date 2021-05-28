@@ -183,6 +183,8 @@ classdef AFC
             this.glmatl_(find(this.glmatl_)) = 1;  
             this.glmmsk_indices_ = find(this.glmatl_);
             GMctx = PerceptronRegistry.read_N21_aparc_aseg_GMctx(); % 147456 x 1
+            this.GMmsk_ = GMctx;
+            this.GMmsk_(find(GMctx)) = 1;
             this.GMmsk_for_glm_ = GMctx(find(this.glmatl_)); %#ok<*FNDSB>             
  		end
     end 
@@ -192,6 +194,7 @@ classdef AFC
     properties % (Access = protected)
         glmatl_         % 147456 x 1 ~ 48*64*48 x 1
         glmmsk_indices_ % 65549  x 1 ~ |parenchyma|
+        GMmsk_          % 147456 x 1 ~ 48*64*48 x 1
         GMmsk_for_glm_  % 65549  x 1 ~ |parenchyma|
         patientid_
         registry_

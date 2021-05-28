@@ -410,11 +410,9 @@ classdef JohnsAFC < mlafc.AFC
             globbed = globFoldersT(ipr.toglob);
             reg = mlafc.AFCRegistry.instance();
             
-            %mask = mlfourd.ImagingContext2(fullfile(getenv('REFDIR'), 'gm3d.nii.gz'));
-            %mask = mask.binarized();
-            mask = mlafc.JohnsAFC.cortical_ribbon_mask();
-            mask = mask.binarized();
-            Nvxl = dipsum(mask);
+            gm3d = mlfourd.ImagingContext2(fullfile(getenv('REFDIR'), 'gm3d.nii.gz'));
+            gm3d = gm3d.binarized();
+            Nvxl = dipsum(gm3d);
             Npts = length(globbed);
             data = zeros(Nvxl, Npts, 'single');
             
@@ -433,9 +431,11 @@ classdef JohnsAFC < mlafc.AFC
                         afc_prob = mlfourd.ImagingContext2(sprintf('%s_%s%s.nii.gz', ...
                             globbed{ig}, ipr.filestring, reg.fileTag));
                     end
+                    %afc_prob = afc_prob.thresh(0.001);
+                    %afc_prob = afc_prob .* gm3d;
                     img = afc_prob.nifti.img;
                     fprintf('gm sum -> %g\n', dipsum(img))
-                    data(:,ig) = reshape(img(logical(mask)), [Nvxl 1]); 
+                    data(:,ig) = reshape(img(logical(gm3d)), [Nvxl 1]); 
                 catch ME
                     handwarning(ME)
                 end
@@ -556,10 +556,10 @@ classdef JohnsAFC < mlafc.AFC
             ifc.fileprefix = ipr.fileprefix;
             ic = mlfourd.ImagingContext2(ifc);
         end
-        function ic = cortical_ribbon_mask()
+        function ic = gm_cortical_mask()            
             pth = fullfile(getenv('MLPDIR'), 'Reference_Images', '');            
             ic = mlfourd.ImagingContext2( ...
-                fullfile(pth, 'N21_aparc+aseg_GMctx_on_711-2V_333_avg_zlt0.5_gAAmask_v1.4dfp.hdr'));
+                fullfile(pth, 'N21_aparc+aseg_GMctx_on_711-2V_333_avg_zlt0.5_gAAmask_v1.4dfp.img'));
         end
         function arr = GMmskArrToFullArr(arr0)
             %% GMMSKARRTOFULLARR
@@ -1314,6 +1314,61 @@ classdef JohnsAFC < mlafc.AFC
                 end
             end
             save(this.registry.sl_fc_gsp_sum_prob_mat, 'sum_prob')
+        end
+        function ic = sv_archive(this)
+            %% SV_ARCHIVE
+            %  @return imagingContext ~ R^4
+            
+            % 04/18/19 KP
+            % 06/06/19 JJL   
+            
+            %% Store sphere voxels indices
+            
+            glmatl_ = mlperceptron.PerceptronRegistry.read_glm_atlas_mask();
+            glmatl_(find(glmatl_)) = 1; %#ok<FNDSB>
+            found_glmatl_ = find(glmatl_);            
+            this.sv_ = {};
+            [Nx,Ny,Nz] = this.registry.atlas_dims;
+            Ns = length(this.sv);
+            glmmsk_3d = reshape(this.glmatl_, [Nx, Ny, Nz]); % in perceptron space, flip_{1,2}(NIfTI)
+            R = this.registry.sphere_radius;
+            I = this.registry.grid_spacing;
+            isv = 1;
+            img = zeros(Nx, Ny, Nz, Ns);
+            
+            for zr = 1:I:Nz
+                for yr = 1:I:Ny
+                    for xr = 1:I:Nx
+
+                        if logical(glmmsk_3d(xr, yr, zr)) % assign spheres with centers inside glmmsk_3d                            
+                            sphere_mask = zeros(Nx, Ny, Nz);
+                            
+                            for z = 1: Nz                        
+                                for y = 1:Ny
+                                    for x = 1:Nx
+                                        
+                                        if (x - xr)^2 + (y - yr)^2 + (z - zr)^2 < R^2
+                                            sphere_mask(x,y,z) = 1; % set elements within ellipsoid to 1
+                                        end
+                                        
+                                    end
+                                end
+                            end
+
+                            sphere_mask = sphere_mask .* glmmsk_3d;
+                            % numel(sphere_mask) ~ 48*64*48
+                            img(:,:,:,isv) = flip(flip(sphere_mask, 1), 2);
+                            isv = isv+1;
+                        end
+                        
+                    end
+                end
+            end 
+            
+            ic = copy(this.GMctx.nifti);
+            ic.img = img;
+            ic.filepath = pwd;
+            ic.fileprefix = sprintf('sv_radius%i_stride%i', R, I);
         end
         function fc1 = visualize_Deltaz_sl_fc(this)
             globbed = globT('*_sl_fc.mat');

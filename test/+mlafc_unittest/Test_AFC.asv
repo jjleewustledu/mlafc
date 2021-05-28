@@ -13,7 +13,7 @@ classdef Test_AFC < matlab.unittest.TestCase
 	properties
  		registry
  		testObj
-        WORK 
+        WORK = '/data/nil-bluearc/shimony/jjlee/FocalEpilepsy'
         %WORK = '/data/shimony/shimony4/jjlee/FocalEpilepsy'
     end
     
@@ -136,29 +136,6 @@ classdef Test_AFC < matlab.unittest.TestCase
                 end
             end            
         end
-        function test_makeSoftmax_mae(this)
-            setenv('WORK', this.WORK)
-            cd(this.WORK)
-            pts = globFoldersT('PT*');
-            for ip = 1:length(pts)
-                if strcmp(pts{ip}, 'PTmore')
-                    continue
-                end
-                try
-                    pdir = fullfile(getenv('WORK'), pts{ip}, '');
-                    pwd0 = pushd(pdir);
-                    jafc = mlafc.JohnsAFC( ...
-                        'sphere_radius', 2, ...
-                        'grid_spacing', 3, ...
-                        'ref_count', 500, ...
-                        'similarityTag', '_mae');
-                    jafc = jafc.makeSoftmax(pwd, pts{ip});
-                    popd(pwd0)
-                catch ME
-                    handwarning(ME)
-                end
-            end            
-        end
         function test_makeSoftmaxMsc(this)
             setenv('WORK', this.WORK)
             cd(this.WORK)
@@ -221,7 +198,7 @@ classdef Test_AFC < matlab.unittest.TestCase
         function test_buildFiberBundles_contrast(this)            
             setenv('WORK', this.WORK)
             cd(this.WORK)
-            sl_fc_mean_ic = mlafc.JohnsAFC.slfcMatToIC(this.registry.sl_fc_mean_mat, 'sl_fc_mean');
+            
             pts = globFoldersT('PT*');
             for ip = 1:length(pts)
                 if strcmp(pts{ip}, 'PTmore')
@@ -232,7 +209,7 @@ classdef Test_AFC < matlab.unittest.TestCase
                     pwd0 = pushd(pdir);
                     mlafc.JohnsAFC.buildFiberBundles_contrast( ...
                         [pts{ip} '_sl_fc.mat'], ...
-                        'sl_fc_mean_ic', sl_fc_mean_ic)
+                        '', sl_fc_mean_ic)
                     popd(pwd0)
                 catch ME
                     handwarning(ME)
@@ -436,8 +413,7 @@ classdef Test_AFC < matlab.unittest.TestCase
 		function setupAFC(this)
  			import mlafc.*;
             this.registry = AFCRegistry.instance('initialize');
-            this.WORK = this.registry.workpath;
-            setenv('WORK', this.WORK)
+            setenv('WORK', this.registry.workpath)
  			%this.testObj_ = KaysAFC;
  		end
 	end

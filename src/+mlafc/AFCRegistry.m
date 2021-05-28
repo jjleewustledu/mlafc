@@ -9,11 +9,12 @@ classdef AFCRegistry < handle
     properties
         atlVoxelSize = 333
         bold_suffix = '_faln_dbnd_xr3d_atl_g7_bpss_resid'
-        grid_spacing
+        grid_spacing = 3
         min_num_vox
         ref_count = 500
-        sphere_radius
-        tag = ''
+        similarityTag = '_tanhmae'
+        sphere_radius = 2
+        tag = '_JohnsAFC'
         tanh_sandwich
     end
     
@@ -28,7 +29,6 @@ classdef AFCRegistry < handle
         perceptron_uout_resid_mat
         perceptron_resid_mat
         ref_resid_mat
-        similarityTag
         sl_fc_gsp_mat
  		sl_fc_gsp_sum_prob_mat
         sl_fc_mean_mat
@@ -110,10 +110,6 @@ classdef AFCRegistry < handle
         end
         function g = get.ref_resid_mat(~)
             g = '_faln_dbnd_xr3d_atl_g7_bpss_resid.mat';
-        end
-        function g = get.similarityTag(this)
-            g = '_tanhmae';
-            %g = '_tanhmdc';
         end
         function g = get.sl_fc_gsp_mat(this)
             g = fullfile(this.workpath, ...
