@@ -9,13 +9,14 @@ classdef AFCRegistry < handle
     properties
         atlVoxelSize = 333
         bold_suffix = '_faln_dbnd_xr3d_atl_g7_bpss_resid'
-        grid_spacing = 3
-        min_num_vox
+        GMonly = true
+        grid_spacing = 1
+        min_num_vox = 1
         ref_count = 500
         similarityTag = '_tanhmae'
-        sphere_radius = 2
-        tag = '_JohnsAFC'
-        tanh_sandwich
+        sphere_radius = 1
+        tag = '_GMonly'
+        tanh_sandwich = true
     end
     
 	properties (Dependent)
@@ -26,6 +27,7 @@ classdef AFCRegistry < handle
         afc_map_mat
         fileTag
         Hacker_Data_ALL
+        N_BOLD
         perceptron_uout_resid_mat
         perceptron_resid_mat
         ref_resid_mat
@@ -98,6 +100,13 @@ classdef AFCRegistry < handle
         end
         function g = get.Hacker_Data_ALL(~)
             g = fullfile('/', 'data', 'nil-bluearc', 'corbetta', 'Hacker', 'Data', 'ALL', '');
+        end        
+        function g = get.N_BOLD(this)
+            if this.GMonly
+                g = 18611;
+            else
+                g = 65549;
+            end
         end
         function g = get.parkhome(~)
             g = '/data/nil-bluearc/shimony/Park';
@@ -128,8 +137,6 @@ classdef AFCRegistry < handle
         end
         function g = get.tanh_tag(this)
             if this.tanh_sandwich
-                g = '_tanh_sandwich';
-            elseif contains(this.similarityTag, 'tanh')
                 g = '_tanh';
             else 
                 g = '';

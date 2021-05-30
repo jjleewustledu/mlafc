@@ -164,10 +164,10 @@ classdef AFC
             import mlperceptron.*;
             ip = inputParser;
             ip.KeepUnmatched = true;
-            addParameter(ip, 'sphere_radius', 2, @isnumeric)
-            addParameter(ip, 'grid_spacing', 3, @isnumeric)
+            addParameter(ip, 'sphere_radius', 1, @isnumeric)
+            addParameter(ip, 'grid_spacing', 1, @isnumeric)
             addParameter(ip, 'min_num_vox', 1, @isnumeric)
-            addParameter(ip, 'tanh_sandwich', false, @islogical)
+            addParameter(ip, 'tanh_sandwich', true, @islogical)
             addParameter(ip, 'ref_count', 500, @isscalar)
             parse(ip, varargin{:})
             ipr = ip.Results;

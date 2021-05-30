@@ -30,52 +30,51 @@ classdef Test_AFC < matlab.unittest.TestCase
 
 	methods (Test)
         function test_mapOfSpheres(~)
-            for sr = [5 3 2]
+            for sr = [3 2 1]
                 jafc = mlafc.JohnsAFC( ...
-                    'sphere_radius', sr, 'grid_spacing', 3);
+                    'sphere_radius', sr, 'grid_spacing', sr);
                 ic = jafc.mapOfSpheres();
                 ic.fsleyes()
-                ic.save()
             end
         end
         function test_radius(this)
             setenv('WORK', this.WORK)
             cd(this.WORK)
-%             jafc = mlafc.JohnsAFC( ...
-%                 'sphere_radius', 4, ...
-%                 'grid_spacing', 5, ...
-%                 'ref_count', 500);
-%             jafc = jafc.explore_fc();
-%             disp(jafc)
-%             ic = mlafc.JohnsAFC.slfcMatToIC('sl_fc_mean_radius4_stride5_N500_JohnsAFC.mat', 'sl_fc_mean');
-%             ic.save()
+            
+            tic
             jafc = mlafc.JohnsAFC( ...
                 'sphere_radius', 1, ...
-                'grid_spacing', 2, ...
-                'ref_count', 500);
+                'grid_spacing', 1, ...
+                'ref_count', 10);
             jafc = jafc.explore_fc();
             disp(jafc)
-            ic = mlafc.JohnsAFC.slfcMatToIC('sl_fc_mean_radius1_stride2_N500_JohnsAFC.mat', 'sl_fc_mean');
+            ic = mlafc.JohnsAFC.slfcMatToIC('sl_fc_mean_radius1_stride1_N10_tanh_GMonly.mat', 'sl_fc_mean');
+            toc
             ic.save()
+            ic.fsleyes()
+            
+            tic
             jafc = mlafc.JohnsAFC( ...
-                'sphere_radius', 3, ...
-                'grid_spacing', 4, ...
-                'ref_count', 500);
+                'sphere_radius', 2, ...
+                'grid_spacing', 3, ...
+                'ref_count', 10);
             jafc = jafc.explore_fc();
             disp(jafc)
-            ic = mlafc.JohnsAFC.slfcMatToIC('sl_fc_mean_radius3_stride4_N500_JohnsAFC.mat', 'sl_fc_mean');
+            ic = mlafc.JohnsAFC.slfcMatToIC('sl_fc_mean_radius2_stride3_N10_tanh_GMonly.mat', 'sl_fc_mean');
+            toc
             ic.save()
+            ic.fsleyes()
         end
         function test_explore_fc(this)
             setenv('WORK', this.WORK)
             cd(this.WORK)
             jafc = mlafc.JohnsAFC( ...
-                'sphere_radius', 2, ...
-                'grid_spacing', 3, ...
+                'sphere_radius', 1, ...
+                'grid_spacing', 1, ...
                 'ref_count', 500);
             jafc = jafc.explore_fc();
             disp(jafc)
-            ic = mlafc.JohnsAFC.slfcMatToIC('sl_fc_mean_radius2_stride3_N500_JohnsAFC.mat', 'sl_fc_mean');
+            ic = mlafc.JohnsAFC.slfcMatToIC('sl_fc_mean_radius1_stride1_N500_tanh_GMonly.mat', 'sl_fc_mean');
             ic.save()
             ic.fsleyes()
         end
@@ -203,22 +202,24 @@ classdef Test_AFC < matlab.unittest.TestCase
                 end
             end 
         end
-        function test_fullArrToGlmmskArr(this)
+        function test_fullArrToMaskArr(this)
             atl = mlfourd.ImagingFormatContext('711-2B_333.nii.gz');
             farr = reshape(flip(flip(atl.img,1),2), [1 48*64*48]);
-            garr = mlafc.JohnsAFC.fullArrToGlmmskArr(farr);
-            farr = mlafc.JohnsAFC.glmmskArrToFullArr(garr);
+            garr = mlafc.JohnsAFC.fullArrToMaskArr(farr);
+            farr = mlafc.JohnsAFC.maskArrToFullArr(garr);
             atl.img = reshape(farr, [48 64 48]);
             atl.img = flip(flip(atl.img, 1), 2);
             atl.fileprefix = 'test';
             atl.fsleyes
         end
-        function test_x333_to_xGlmmskArr(this)
-            this.assertEqual(mlafc.JohnsAFC.x333_to_xGlmmskArr([23 48 21]), 25878)
-            this.assertEqual(mlafc.JohnsAFC.x333_to_xGlmmskArr([36 48 21]), 25865)
-            this.assertEqual(mlafc.JohnsAFC.x333_to_xGlmmskArr([11 14 35]), 55267)
+        function test_x333_to_xMaskArr(this)
+            if ~this.registry.GMonly
+                this.assertEqual(mlafc.JohnsAFC.x333_to_xMaskArr([23 48 21]), 25878)
+                this.assertEqual(mlafc.JohnsAFC.x333_to_xMaskArr([36 48 21]), 25865)
+                this.assertEqual(mlafc.JohnsAFC.x333_to_xMaskArr([11 14 35]), 55267)
+            end
         end
-        function test_buildFiberBundles_contrast(this)            
+        function test_buildFiberBundles_contrast(this)
             setenv('WORK', this.WORK)
             cd(this.WORK)
             sl_fc_mean_ic = mlafc.JohnsAFC.slfcMatToIC(this.registry.sl_fc_mean_mat, 'sl_fc_mean');

@@ -5,20 +5,18 @@ classdef JohnsAFC < mlafc.AFC
  	%  was created 04-Apr-2021 12:25:45 by jjlee,
  	%  last modified $LastChangedDate$ and placed into repository /Users/jjlee/MATLAB-Drive/mlafc/src/+mlafc.
  	%% It was developed on Matlab 9.9.0.1592791 (R2020b) Update 5 for MACI64.  Copyright 2021 John Joowon Lee.
- 	
-    properties (Constant)
-        N_BOLD = 65549
-    end
-    
+ 	    
 	properties (Dependent)
+        BigBrain300
  		GMctx % ImagingContext2
         GMToYeo7_xfm
-        BigBrain300
+        N_BOLD
         Yeo7
         Yeo17
     end
     
     properties
+        betaT
         sl_fc_last
         tag
     end
@@ -45,6 +43,12 @@ classdef JohnsAFC < mlafc.AFC
             sigmaB = sqrt(sum(dB.^2, 1));  % 1  x Nv
             
             acc = cov ./ (sigmaA(:,ones(1,Nv)) .* sigmaB(ones(Ns,1),:)); % Ns x Nv
+        end
+        function x = atanh(x)
+            %% avoids singularities for x -> {-1, 1}
+            
+            x(x > 1-eps) = 1 - eps;
+            x(x < -(1-eps)) = -(1 - eps);
         end
         function brainNet_xi_x(coord, rsn, varargin)
             %% renders surfaces of fiber bundles for seed xi and base manifolds for voxel x.
@@ -180,7 +184,7 @@ classdef JohnsAFC < mlafc.AFC
             ld = load(sprintf('sl_fc_mean_radius%i_stride%i_N%i_JohnsAFC.mat', ipr.radius, ipr.stride, ipr.ref_count), 'sl_fc_mean');
             sl_fc_mean = ld.sl_fc_mean;
 
-            x1 = mlafc.JohnsAFC.x333_to_xGlmmskArr(ipr.x);
+            x1 = mlafc.JohnsAFC.x333_to_xMaskArr(ipr.x);
             sl_fc_xi = sl_fc_mean(:, x1)'; % as row
             garr = zeros(1, 65549);
             for isv = 1:length(sv)
@@ -228,7 +232,7 @@ classdef JohnsAFC < mlafc.AFC
             end
             
             ic = mlafc.JohnsAFC.slfcMatToIC(ipr.matname, 'sl_fc');
-            ic = tanh(atanh(ic) - atanh(ipr.sl_fc_mean_ic));
+            ic = tanh(mlafc.JohnsAFC.atanh(ic) - mlafc.JohnsAFC.atanh(ipr.sl_fc_mean_ic));
             ic.filepath = pwd;
             fb = copy(ic.nifti);
             
@@ -305,7 +309,7 @@ classdef JohnsAFC < mlafc.AFC
             
             ld = load(ipr.matname, 'sl_fc');
             sl_fc = ld.sl_fc;
-            pi_energy = tanh(mean(atanh(double(sl_fc)) - atanh(double(ipr.sl_fc_mean)), 1, 'omitnan')); % 1 x 65546
+            pi_energy = tanh(mean(mlafc.JohnsAFC.atanh(double(sl_fc)) - mlafc.JohnsAFC.atanh(double(ipr.sl_fc_mean)), 1, 'omitnan')); % 1 x 65546
             pi_energy_mat = sprintf('%s_pi_energy.mat', ipr.pid);
             save(pi_energy_mat, 'pi_energy')
             
@@ -490,50 +494,50 @@ classdef JohnsAFC < mlafc.AFC
                 '/usr/local/fsl/bin/flirt -in %s -applyxfm -init %s -out %s -paddingsize 0.0 -interp %s -ref %s', ...
                 ipr.nii, xfm, fnout, ipr.interp, ref))
         end
-        function garr = fullArrToGlmmskArr(farr)
-            %% GLMMSKARRTOFULLARR
+        function garr = fullArrToMaskArr(farr)
+            %% FULLARRTOMASKARR
             %  @param required farr is Nt x (48*64*48).
-            %  @return garr is Nt x 65549.
+            %  @return garr is Nt x Nmask.
             
             assert(isnumeric(farr))
             assert(size(farr,2) == 48*64*48)
             assert(ismatrix(farr))
             
-            glmatl_ = mlperceptron.PerceptronRegistry.read_glm_atlas_mask(); % 147456 x 1
-            glmatl_(find(glmatl_)) = 1;   %#ok<FNDSB>
-            found_glmatl_ = find(glmatl_); % 65549 x 1
+            mask_ = mlafc.JohnsAFC.readMaskArr();
+            mask_(find(mask_)) = 1;   %#ok<FNDSB>
+            found_mask_ = find(mask_); % Nmasked x 1
             
             Nt = size(farr,1);
-            garr = zeros(Nt, length(found_glmatl_)); % Nt x 65549
+            garr = zeros(Nt, length(found_mask_)); % Nt x Nmasked
             if 1 == Nt
-                garr = farr(found_glmatl_');
+                garr = farr(found_mask_');
                 return
             end            
             for t = 1:Nt
-                garr(t,:) = farr(t, found_glmatl_');
+                garr(t,:) = farr(t, found_mask_');
             end
         end 
-        function farr = glmmskArrToFullArr(garr)
-            %% GLMMSKARRTOFULLARR
+        function farr = maskArrToFullArr(garr)
+            %% MASKARRTOFULLARR
             %  @param required garr is Nt x 65549.
             %  @return farr is Nt x (48*64*48).
             
             assert(isnumeric(garr))
-            assert(size(garr,2) == mlafc.JohnsAFC.N_BOLD)
-            assert(ismatrix(garr))            
+            assert(size(garr,2) == 65549 || size(garr,2) == 18611)
+            assert(ismatrix(garr))        
             
-            glmatl_ = mlperceptron.PerceptronRegistry.read_glm_atlas_mask(); % 147456 x 1
-            glmatl_(find(glmatl_)) = 1;   %#ok<FNDSB>
-            found_glmatl_ = find(glmatl_); % 65549 x 1
+            mask_ = mlafc.JohnsAFC.readMaskArr();
+            mask_(find(mask_)) = 1;   %#ok<FNDSB>
+            found_mask_ = find(mask_); % Nmasked x 1
             
             Nt = size(garr,1);
             farr = zeros(Nt, mlafc.AFCRegistry.instance().atlas_numel()); % Nt x 147456
             if 1 == Nt
-                farr(found_glmatl_') = garr;
+                farr(found_mask_') = garr;
                 return
             end            
             for t = 1:Nt
-                farr(t,found_glmatl_') = garr(t,:);
+                farr(t,found_mask_') = garr(t,:);
             end
         end 
         function ic = glmmskArrToIC(varargin)
@@ -543,7 +547,7 @@ classdef JohnsAFC < mlafc.AFC
             parse(ip, varargin{:})
             ipr = ip.Results;            
             
-            arr = mlafc.JohnsAFC.glmmskArrToFullArr(ipr.arr);
+            arr = mlafc.JohnsAFC.maskArrToFullArr(ipr.arr);
             arr = arr';            
             img = reshape(arr, [48 64 48]);
             img(isnan(img)) = 0;
@@ -645,7 +649,7 @@ classdef JohnsAFC < mlafc.AFC
             assert(ischar(objname))
             ld = load(matname, objname);
             obj = ld.(objname);
-            obj = mlafc.JohnsAFC.glmmskArrToFullArr(obj);
+            obj = mlafc.JohnsAFC.maskArrToFullArr(obj);
             obj = obj';
             
             Nt = size(obj, 2);
@@ -658,7 +662,7 @@ classdef JohnsAFC < mlafc.AFC
             if ipr.flip2
                 img = flip(img, 2);
             end
-            ifc = mlfourd.ImagingFormatContext( fullfile(getenv('REFDIR'), '711-2B_333.nii.gz'));
+            ifc = mlfourd.ImagingFormatContext(fullfile(getenv('REFDIR'), '711-2B_333.nii.gz'));
             ifc.img = img;
             ifc.filepath = pwd;
             ifc.fileprefix = myfileprefix(matname);
@@ -712,8 +716,16 @@ classdef JohnsAFC < mlafc.AFC
         
             popd(pwd0)
         end
+        function arr = readMaskArr()
+            reg = mlafc.AFCRegistry.instance();            
+            if reg.GMonly
+                arr = mlperceptron.PerceptronRegistry.read_N21_aparc_aseg_GMctx(); % 147456 x 1 =: 18611
+            else
+                arr = mlperceptron.PerceptronRegistry.read_glm_atlas_mask(); % 147456 x 1 =: 65549
+            end            
+        end
         function ic = slfcMatToIC(matname, objname, varargin)
-            %% slfcMatToIC
+            %% SLFCMATTOIC
             %  @param matname is a Percptron mat file.
             %  @param objname is the name of the sought object.
             %  @param flip1 is logical.
@@ -735,7 +747,7 @@ classdef JohnsAFC < mlafc.AFC
             if 3 == ndims(obj)
                 obj = squeeze(obj(ipr.refnum, :, :));
             end
-            obj = mlafc.JohnsAFC.glmmskArrToFullArr(obj);
+            obj = mlafc.JohnsAFC.maskArrToFullArr(obj);
             obj = obj';
             
             Nspheres = size(obj, 2);
@@ -830,9 +842,9 @@ classdef JohnsAFC < mlafc.AFC
                 product.fsleyes(resection{1}, edge_seg.filename)
             end
         end
-        function x1 = x333_to_xGlmmskArr(varargin)
+        function x1 = x333_to_xMaskArr(varargin)
             %  @param x333 is [x,y,z] from the R^3 space of the 711-2B_333 atlas.
-            %  @return x1 is the generalized coord in the R^1 space of glmmask
+            %  @return x1 is the generalized coord in the R^1 space of this.glmatl_ or this.GMmsk_.
             
             ip = inputParser;
             addRequired(ip, 'x333', @(x) isvector(x))
@@ -846,7 +858,7 @@ classdef JohnsAFC < mlafc.AFC
             img(x,y,z) = 1;
             img = flip(flip(img, 1), 2);
             farr = reshape(img, [1 48*64*48]);            
-            garr = mlafc.JohnsAFC.fullArrToGlmmskArr(farr);
+            garr = mlafc.JohnsAFC.fullArrToMaskArr(farr);
             x1 = find(garr);
             assert(isscalar(x1))
         end
@@ -856,6 +868,10 @@ classdef JohnsAFC < mlafc.AFC
         
         %% GET
         
+        function g = get.BigBrain300(~)
+            g = mlfourd.ImagingContext2( ...
+                fullfile(getenv('REFDIR'), 'BigBrain300', 'BigBrain300_711-2b_allROIs.nii.gz'));
+        end
         function g = get.GMctx(~)
             g = mlfourd.ImagingContext2( ...
                 fullfile(getenv('REFDIR'),  'N21_aparc+aseg_GMctx_on_711-2V_333_avg_zlt0.5_gAAmask_v1_binarized.nii.gz'));
@@ -867,9 +883,8 @@ classdef JohnsAFC < mlafc.AFC
             end
             g = xfm_;
         end
-        function g = get.BigBrain300(~)
-            g = mlfourd.ImagingContext2( ...
-                fullfile(getenv('REFDIR'), 'BigBrain300', 'BigBrain300_711-2b_allROIs.nii.gz'));
+        function g = get.N_BOLD(this)
+            g = this.registry.N_BOLD;
         end
         function g = get.Yeo7(~)
             g = mlfourd.ImagingContext2( ...
@@ -882,6 +897,12 @@ classdef JohnsAFC < mlafc.AFC
         
         %%        
         
+        function bold = applyMaskToBoldFrames(this, bold)
+            if this.registry.GMonly
+                mask = this.GMmsk_for_glm_;                
+                bold = bold(:, logical(mask));
+            end
+        end
         function e = energy_similarity(this, fc)
             %% ENERGY_SIMILARITY <= 0.  Greater energy_similarity describes greater similarity between data and normal model.  
             
@@ -891,13 +912,13 @@ classdef JohnsAFC < mlafc.AFC
                 case '_diag'
                     e = diag(this.acorrcoef(fc, this.sl_fc_mean_))';
                 case '_tanhmae'
-                    e = -tanh(mean(abs(atanh(double(fc)) - atanh(double(this.sl_fc_mean_))), 1, 'omitnan')); % mean abs error
+                    e = -tanh(mean(abs(this.atanh(double(fc)) - this.atanh(double(this.sl_fc_mean_))), 1, 'omitnan')); % mean abs error
                 case '_mae'
-                    e = -mean(abs(atanh(double(fc)) - atanh(double(this.sl_fc_mean_))), 1, 'omitnan'); % z-score
+                    e = -mean(abs(this.atanh(double(fc)) - this.atanh(double(this.sl_fc_mean_))), 1, 'omitnan'); % z-score
                 case '_rmse'
-                    e = -sqrt(mean((atanh(double(fc)) - atanh(double(this.sl_fc_mean_))).^2, 1, 'omitnan')); % z-score
+                    e = -sqrt(mean((this.atanh(double(fc)) - this.atanh(double(this.sl_fc_mean_))).^2, 1, 'omitnan')); % z-score
                 case '_mean2'
-                    e = mean(atanh(double(this.acorrcoef(fc, this.sl_fc_mean_))), 2, 'omitnan')'; % z-score
+                    e = mean(this.atanh(double(this.acorrcoef(fc, this.sl_fc_mean_))), 2, 'omitnan')'; % z-score
                 otherwise
                     error('mlafc:ValueError', 'JohnsAFC.energy_similarity')
             end
@@ -926,7 +947,7 @@ classdef JohnsAFC < mlafc.AFC
                                refid, ...
                                'Perceptron', ...
                                sprintf('%s%s', refid, ref_resid_mat)), 'bold_frames'); % bold_frames has N_t x 65549  
-                    bold_frames = ld.bold_frames;
+                    bold_frames = this.applyMaskToBoldFrames(ld.bold_frames);
 
                     sl_fc_gsp_ref = zeros(Nsv__, this.N_BOLD); 
                     acorrcoef = @this.acorrcoef;
@@ -936,8 +957,8 @@ classdef JohnsAFC < mlafc.AFC
                             acorrcoef(bf_sv, bold_frames); % N_{sphere_vox} x 65549
                     end
                     save(reg.sl_fc_gsp_ref_mat(refnum), 'sl_fc_gsp_ref')
-                    if contains(reg.similarityTag, 'tanh')                        
-                        sl_fc_accum = sl_fc_accum + atanh(sl_fc_gsp_ref);
+                    if reg.tanh_sandwich   
+                        sl_fc_accum = sl_fc_accum + this.atanh(sl_fc_gsp_ref);
                     else
                         sl_fc_accum = sl_fc_accum + sl_fc_gsp_ref;
                     end
@@ -949,7 +970,7 @@ classdef JohnsAFC < mlafc.AFC
             
             %% make mean map using GSP subjects
             
-            if contains(reg.similarityTag, 'tanh')
+            if reg.tanh_sandwich  
                 sl_fc_mean = tanh(sl_fc_accum/accum);
             else
                 sl_fc_mean = sl_fc_accum/accum;
@@ -975,8 +996,9 @@ classdef JohnsAFC < mlafc.AFC
             for refnum = 1:reg.ref_count
                 try
                     ld = load(reg.sl_fc_gsp_ref_mat(refnum), 'sl_fc_gsp_ref');
-                    if contains(reg.similarityTag, 'tanh')                        
-                        sl_fc_accum = sl_fc_accum + atanh(ld.sl_fc_gsp_ref);
+                    sl_fc_gsp_ref = ld.sl_fc_gsp_ref;
+                    if reg.tanh_sandwich                       
+                        sl_fc_accum = sl_fc_accum + this.atanh(sl_fc_gsp_ref);
                     else
                         sl_fc_accum = sl_fc_accum + ld.sl_fc_gsp_ref;
                     end
@@ -988,7 +1010,7 @@ classdef JohnsAFC < mlafc.AFC
             
             %% make mean map using GSP subjects
             
-            if contains(reg.similarityTag, 'tanh')
+            if reg.tanh_sandwich
                 sl_fc_mean = tanh(sl_fc_accum/accum);
             else
                 sl_fc_mean = sl_fc_accum/accum;
@@ -1038,8 +1060,9 @@ classdef JohnsAFC < mlafc.AFC
                     sprintf('%s%s', this.patientid, this.registry.perceptron_uout_resid_mat)), ...
                     'bold_frames');
             end
-            bold_frames = ld.bold_frames; % N_t x N_vxls ~ 2307 x 65549 single
-                                          % N_t is variable across studies            
+            bold_frames = applyMaskToBoldFrames(ld.bold_frames);
+                          % N_t x N_vxls ~ 2307 x 65549 single | 2307 x 18611 single
+                          % N_t is variable across studies          
             if ~isempty(ipr.Nframes)
                 bold_frames = bold_frames(1:ipr.Nframes, :);                
                 fprintf('makeSoftmax.bold_frames.size -> %s\n', mat2str(size(bold_frames)))
@@ -1066,17 +1089,17 @@ classdef JohnsAFC < mlafc.AFC
             
             %% save        
             
-            map = this.glmmskArrToFullArr(tanh(mean(atanh(sl_fc), 1))); % 1 x 147456
+            map = this.maskArrToFullArr(tanh(mean(this.atanh(sl_fc), 1))); % 1 x 147456
             this.afc_map = map;            
             p = this.product('fileprefix', [this.patientid '_pi_sl_fc'], 'map', map);
             p.nifti.save();
-            map2 = this.glmmskArrToFullArr(tanh(mean(atanh(sl_fc) - atanh(this.sl_fc_mean_), 1))); % 1 x 147456
+            map2 = this.maskArrToFullArr(tanh(mean(this.atanh(sl_fc) - this.atanh(this.sl_fc_mean_), 1))); % 1 x 147456
             p = this.product('fileprefix', [this.patientid '_pi_sl_fc-sl_fc_mean'], 'map', map2);
             p.nifti.save();
-            map2a = this.glmmskArrToFullArr(tanh(mean(abs(atanh(sl_fc) - atanh(this.sl_fc_mean_)), 1))); % 1 x 147456
+            map2a = this.maskArrToFullArr(tanh(mean(abs(this.atanh(sl_fc) - this.atanh(this.sl_fc_mean_)), 1))); % 1 x 147456
             p = this.product('fileprefix', [this.patientid '_pi_abs_sl_fc-sl_fc_mean'], 'map', map2a);
             p.nifti.save();
-            map3 = this.glmmskArrToFullArr(this.energy_similarity(sl_fc)); % 1 x 147456
+            map3 = this.maskArrToFullArr(this.energy_similarity(sl_fc)); % 1 x 147456
             p = this.product('fileprefix', [this.patientid '_energy'], 'map', map3);
             p.nifti.save();            
         end
@@ -1117,8 +1140,9 @@ classdef JohnsAFC < mlafc.AFC
                     sprintf('%s%s', this.patientid, this.registry.perceptron_uout_resid_mat)), ...
                     'bold_frames');
             end
-            bold_frames = ld.bold_frames; % N_t x N_vxls ~ 2307 x 65549 single
-                                          % N_t is variable across studies            
+            bold_frames = applyMaskToBoldFrames(ld.bold_frames); 
+                          % N_t x N_vxls ~ 2307 x 65549 single | 2307 x 18611 single
+                          % N_t is variable across studies
             if ~isempty(ipr.Nframes)
                 bold_frames = bold_frames(1:ipr.Nframes, :);                
                 fprintf('makeSoftmax.bold_frames.size -> %s\n', mat2str(size(bold_frames)))
@@ -1141,18 +1165,34 @@ classdef JohnsAFC < mlafc.AFC
             %% obtaning prob of dissimilarity.
             
             this.sl_fc_last = sl_fc;
-            prob = exp(-this.energy_similarity(sl_fc)); % 1 x this.N_BOLD
+            prob = exp(-this.betaT*this.energy_similarity(sl_fc)); % 1 x this.N_BOLD
 
             %% assemble softmax
             
             sum_prob = prob + this.sum_prob_refs(); % init with patient
             map = prob ./ sum_prob; % Boltzmann distribution
-            map = this.glmmskArrToFullArr(map); % 1 x 147456
+            map = this.maskArrToFullArr(map); % 1 x 147456
             this.afc_map = map; % ease QA
             
-            %% save
+            %% save            
+            save(fullfile(this.patientdir, [this.patientid '_sl_fc.mat']), 'sl_fc')
             p = this.product('map', map);
             p.nifti.save();
+            
+            %% save more
+            map1 = this.maskArrToFullArr(tanh(mean(this.atanh(sl_fc), 1))); % 1 x 147456
+            this.afc_map = map1;            
+            p = this.product('fileprefix', [this.patientid '_pi_sl_fc'], 'map', map1);
+            p.nifti.save();
+            map2 = this.maskArrToFullArr(tanh(mean(this.atanh(sl_fc) - this.atanh(this.sl_fc_mean_), 1))); % 1 x 147456
+            p = this.product('fileprefix', [this.patientid '_pi_sl_fc-sl_fc_mean'], 'map', map2);
+            p.nifti.save();
+            map2a = this.maskArrToFullArr(tanh(mean(abs(this.atanh(sl_fc) - this.atanh(this.sl_fc_mean_)), 1))); % 1 x 147456
+            p = this.product('fileprefix', [this.patientid '_pi_abs_sl_fc-sl_fc_mean'], 'map', map2a);
+            p.nifti.save();
+            map3 = this.maskArrToFullArr(this.energy_similarity(sl_fc)); % 1 x 147456
+            p = this.product('fileprefix', [this.patientid '_energy'], 'map', map3);
+            p.nifti.save();  
         end
         function ic = mapOfSpheres(this)
             reg = this.registry;
@@ -1160,7 +1200,7 @@ classdef JohnsAFC < mlafc.AFC
             for isv = 1:length(this.sv)
                 glmarr(this.sv{isv}') = isv;
             end
-            fullarr = this.glmmskArrToFullArr(glmarr);
+            fullarr = this.maskArrToFullArr(glmarr);
             
             img = reshape(fullarr, [48 64 48]);
             img(isnan(img)) = 0;
@@ -1320,7 +1360,7 @@ classdef JohnsAFC < mlafc.AFC
             assert(~isempty(globbed))
             assert(~isempty(this.sl_fc_mean_))
             ld = load(globbed{1}, 'sl_fc');
-            Deltaz = tanh(atanh(ld.sl_fc) - atanh(this.sl_fc_mean_));
+            Deltaz = tanh(this.atanh(ld.sl_fc) - this.atanh(this.sl_fc_mean_));
             fc1 = this.visualize_sl_fc(Deltaz, 'tag', '_Deltaz_fc1');
         end
         function fc1 = visualize_sl_fc(this, varargin)
@@ -1365,7 +1405,7 @@ classdef JohnsAFC < mlafc.AFC
             
             h = figure;
             set(gca, 'FontSize', 32)
-            pi_energy = tanh(mean(atanh(ipr.fc1), 1, 'omitnan'));
+            pi_energy = tanh(mean(this.atanh(ipr.fc1), 1, 'omitnan'));
             max_ = max(pi_energy);
             min_ = min(pi_energy);
             range_ = max_ - min_;
@@ -1385,6 +1425,8 @@ classdef JohnsAFC < mlafc.AFC
         
  		function this = JohnsAFC(varargin)
  			%% JOHNSAFC
+            %  @GMonly restricts to Carl's GM mask.
+            %  @betaT is inverse temperature, default := 1.
 
  			this = this@mlafc.AFC(varargin{:});            
             ip = inputParser;
@@ -1392,15 +1434,19 @@ classdef JohnsAFC < mlafc.AFC
             addParameter(ip, 'patientid', '', @ischar)
             addParameter(ip, 'patientdir', pwd, @isfolder)
             addParameter(ip, 'similarityTag', '_tanhmae', @ischar)
+            addParameter(ip, 'GMonly', true, @islogical)
+            addParameter(ip, 'betaT', 1, @isscalar)
             parse(ip, varargin{:})
             ipr = ip.Results;
             
             this.registry_.min_num_vox = 1;
-            this.registry_.tanh_sandwich = false;
+            this.registry_.tanh_sandwich = true;
             this.registry_.similarityTag = ipr.similarityTag;
-            this.registry_.tag = '_JohnsAFC';
+            this.registry_.tag = '_GMonly';
+            this.registry_.GMonly = ipr.GMonly;
             this.patientid_ = ipr.patientid;
             this.patientdir = ipr.patientdir;
+            this.betaT = ipr.betaT;
             
             this = sv_initialization(this);
             if isempty(this.sl_fc_mean_)
@@ -1459,12 +1505,12 @@ classdef JohnsAFC < mlafc.AFC
             
             %% Store sphere voxels indices
             
-            glmatl_ = mlperceptron.PerceptronRegistry.read_glm_atlas_mask();
-            glmatl_(find(glmatl_)) = 1; %#ok<FNDSB>
-            found_glmatl_ = find(glmatl_);            
+            mask_ = mlafc.JohnsAFC.readMaskArr();
+            mask_(find(mask_)) = 1; %#ok<FNDSB>
+            found_mask_ = find(mask_);            
             this.sv_ = {};
             [Nx,Ny,Nz] = this.registry.atlas_dims;
-            glmmsk_3d = reshape(this.glmatl_, [Nx, Ny, Nz]); % in perceptron space, flip_{1,2}(NIfTI)
+            mask_3d = reshape(mask_, [Nx, Ny, Nz]); % in perceptron space, flip_{1,2}(NIfTI)
             R = this.registry.sphere_radius;
             I = this.registry.grid_spacing;
             isv = 1;
@@ -1473,7 +1519,7 @@ classdef JohnsAFC < mlafc.AFC
                 for yr = 1:I:Ny
                     for xr = 1:I:Nx
 
-                        if logical(glmmsk_3d(xr, yr, zr)) % assign spheres with centers inside glmmsk_3d                            
+                        if logical(mask_3d(xr, yr, zr)) % assign spheres with centers inside glmmsk_3d                            
                             sphere_mask = zeros(Nx, Ny, Nz);
                             
                             for z = 1: Nz                        
@@ -1488,11 +1534,11 @@ classdef JohnsAFC < mlafc.AFC
                                 end
                             end
 
-                            sphere_mask = sphere_mask .* glmmsk_3d;
-                            sphere_mask_glm = sphere_mask(found_glmatl_); %#ok<FNDSB> 
-                            % numel(sphere_mask_glm) ~ 65549
+                            sphere_mask = sphere_mask .* mask_3d;
+                            sphere_mask_glm = sphere_mask(found_mask_); %#ok<FNDSB> 
+                            % numel(sphere_mask_glm) ~ 65549 | 18611
                             % numel(sphere_mask) ~ 48*64*48
-                            % numel(found_glmatl_) ~ 65549
+                            % numel(found_mask_) ~ 65549 | 18611
                             % ordering of [x y z], [xr yr zr] is irrelevant
                             sphere_vox = find(sphere_mask_glm); % sphere_vox := indices
                             this.sv_{isv} = sphere_vox;
@@ -1575,7 +1621,7 @@ classdef JohnsAFC < mlafc.AFC
             ld = load(sprintf('sl_fc_mean_radius%i_stride%i_N%i_JohnsAFC.mat', ipr.radius, ipr.stride, ipr.ref_count), 'sl_fc_mean');
             sl_fc_mean = ld.sl_fc_mean;
 
-            x1 = mlafc.JohnsAFC.x333_to_xGlmmskArr(ipr.x);
+            x1 = mlafc.JohnsAFC.x333_to_xMaskArr(ipr.x);
             sl_fc_xi = sl_fc_mean(:, x1)'; % as row
             garr = zeros(1, 65549);
             for isv = 1:length(sv)
