@@ -16,7 +16,6 @@ classdef JohnsAFC < mlafc.AFC
     end
     
     properties
-        betaT
         sl_fc_last
         tag
     end
@@ -134,70 +133,6 @@ classdef JohnsAFC < mlafc.AFC
                 writetable(T_x(r,:), ['basemanifold_' rsns{r} '_on_MNI152.node'], 'FileType', 'text', 'WriteVariableNames', false, 'Delimiter', '\t')
             end
             
-        end
-        function buildBaseManifolds(varargin)
-            %% BUILDBASEMANIFOLDS builds representations of base manifolds for visualization.
-            %  BrainNet node center ~ [90 126 72]
-            
-            ip = inputParser;
-            addParameter(ip, 'hemisphere', 'r', @ischar)
-            parse(ip, varargin{:})
-            ipr = ip.Results;
-            ipr.hemisphere = lower(ipr.hemisphere);            
-            
-            rsns = {'smn' 'dmn' 'vis' 'fpc' 'van' 'dan' };            
-            if contains(ipr.hemisphere, 'r')
-                x = {[27 23 44] [25 15 31] [26 8 21] [38 41 30] [35 41 22] [32 15 39]}; % fsleyes coords 
-                % bb300_index = [44 118 161 199 215 265];
-            else
-                x = {[16 24 43] [21 16 28] [21 8 22] [10 42 30] [35 41 22] [18 15 40]}; % fsleyes coords
-            end
-
-            for r = 1:length(rsns)
-                ic = mlafc.JohnsAFC.buildBaseManifold(rsns{r}, x{r} + 1);
-                %ic.fsleyes
-                ic.save
-                fpout = strsplit(ic.fileprefix, '_x_');
-                fpout = [fpout{1} '_on_MNI152'];
-                mlafc.JohnsAFC.flirt_to_MNI152(ic.filename, 'fpout', fpout); %, 'interp', 'nearestneighbour');
-            end
-        end
-        function ic = buildBaseManifold(varargin)
-            %% builds base manifold for rsn using voxel coordinate x.
-            %  @param required x is coordinate vector for 711-2B_333.
-            %  @param radius is integer.
-            %  @param stride is integer.
-            %  @returns ImagingContext2 on 333-atlas with functional connectivity of x in base manifold
-            %           to all fiber bundles defined by sv_radius*_stride*.mat
-            
-            ip = inputParser;
-            addRequired(ip, 'rsn', @ischar)
-            addRequired(ip, 'x', @isvector)
-            addParameter(ip, 'radius', 2, @isscalar)
-            addParameter(ip, 'stride', 3, @isscalar)
-            addParameter(ip, 'ref_count', 500, @isscalar)
-            parse(ip, varargin{:})
-            ipr = ip.Results;
-            
-            ld = load(sprintf('sv_radius%i_stride%i.mat', ipr.radius, ipr.stride), 'sv');
-            sv = ld.sv;
-            ld = load(sprintf('sl_fc_mean_radius%i_stride%i_N%i_JohnsAFC.mat', ipr.radius, ipr.stride, ipr.ref_count), 'sl_fc_mean');
-            sl_fc_mean = ld.sl_fc_mean;
-
-            x1 = mlafc.JohnsAFC.x333_to_xMaskArr(ipr.x);
-            sl_fc_xi = sl_fc_mean(:, x1)'; % as row
-            garr = zeros(1, 65549);
-            for isv = 1:length(sv)
-                sv_set = sv{isv};
-                for isv_set = 1:length(sv_set)
-                    garr(sv_set(isv_set)) = sl_fc_xi(isv);
-                end
-            end
-            x = ipr.x(1);
-            y = ipr.x(2);
-            z = ipr.x(3);
-            ic = mlafc.JohnsAFC.glmmskArrToIC( ...
-                garr, 'fileprefix', sprintf('basemanifold_%s_x_%i_%i_%i', ipr.rsn, x, y, z));
         end
         function buildFiberBundles()
             reg = mlafc.AFCRegistry.instance();
@@ -380,6 +315,28 @@ classdef JohnsAFC < mlafc.AFC
                 popd(pwd0)
             end
         end    
+        function Z_G = build_Z_G()
+            %% cf. Bishop sec. 11.6.
+            %  @return Z_G is numeric with size ~ 1 x Nvoxels
+            
+            reg = mlafc.AFCRegistry.instance();
+            sl_fc_gsp_ref_mat = @reg.sl_fc_gsp_ref_mat;
+            betaT_ = reg.betaT;
+            
+            ld1 = load(sl_fc_gsp_ref_mat(1), 'sl_fc_gsp_ref');            
+            M = size(ld1.sl_fc_gsp_ref, 1);
+            Z_G_ = zeros(reg.ref_count, size(ld1.sl_fc_gsp_ref, 2));            
+            parfor r = 1:reg.ref_count
+                matfile = feval(sl_fc_gsp_ref_mat, r); %#ok<FVAL>
+                ld = load(matfile, 'sl_fc_gsp_ref');
+                for m = 1:M
+                    Z_G_(r,:) = Z_G_(r,:) + exp(-betaT_*ld.sl_fc_gsp_ref(m,:));
+                end
+            end
+            Z_G = sum(Z_G_, 1);
+            
+            save(reg.Z_G_mat, 'Z_G');
+        end
         function calc_jsdiv(varargin)
             ip = inputParser;
             addOptional(ip, 'toglob', 'PT*', @ischar)
@@ -540,10 +497,10 @@ classdef JohnsAFC < mlafc.AFC
                 farr(t,found_mask_') = garr(t,:);
             end
         end 
-        function ic = glmmskArrToIC(varargin)
+        function ic = maskArrToIC(varargin)
             ip = inputParser;
             addRequired(ip, 'arr', @(x) isvector(x))
-            addParameter(ip, 'fileprefix', 'glmmskArrToIC', @ischar)
+            addParameter(ip, 'fileprefix', 'maskArrToIC', @ischar)
             parse(ip, varargin{:})
             ipr = ip.Results;            
             
@@ -564,37 +521,7 @@ classdef JohnsAFC < mlafc.AFC
             pth = fullfile(getenv('MLPDIR'), 'Reference_Images', '');            
             ic = mlfourd.ImagingContext2( ...
                 fullfile(pth, 'N21_aparc+aseg_GMctx_on_711-2V_333_avg_zlt0.5_gAAmask_v1.4dfp.hdr'));
-        end
-        function arr = GMmskArrToFullArr(arr0)
-            %% GMMSKARRTOFULLARR
-            %  @param required arr0 is Npheres x 18611.
-            %  @return arr is Nspheres x (48*64*48).
-            
-            import mlperceptron.PerceptronRegistry
-            
-            assert(isnumeric(arr0))
-            assert(size(arr0,2) == 18611)
-            assert(ismatrix(arr0)) 
-            
-%             glmatl_ = PerceptronRegistry.read_glm_atlas_mask(); % 147456 x 1
-%             glmatl_(find(glmatl_)) = 1; %#ok<FNDSB>
-%             GMctx_ = PerceptronRegistry.read_N21_aparc_aseg_GMctx(); % 147456 x 1
-%             GMmsk_for_glm_ = GMctx_(find(glmatl_)); %#ok<FNDSB>
-%             GMmsk_indices_ = find(GMmsk_for_glm_); % 18611 x 1            
-            
-            GMctx_ = PerceptronRegistry.read_N21_aparc_aseg_GMctx(); % 147456 x 1
-            found_GMctx_ = find(GMctx_); % 18611 x 1  
-            
-            Nspheres = size(arr0,1);
-            arr = zeros(Nspheres, mlafc.AFCRegistry.instance().atlas_numel()); % Nspheres x 147456
-            if 1 == Nspheres
-                arr(found_GMctx_') = arr0;
-                return
-            end            
-            for t = 1:Nspheres
-                arr(t,found_GMctx_') = arr0(t,:);
-            end
-        end    
+        end  
         function ic = imagingContext_N21_aparc_aseg_GMctx()
             import mlperceptron.*
             pth = fullfile(getenv('MLPDIR'), 'Reference_Images', '');            
@@ -895,7 +822,7 @@ classdef JohnsAFC < mlafc.AFC
                 fullfile(getenv('REFDIR'), 'Yeo', 'Yeo2011_17Networks_333.nii.gz'));
         end        
         
-        %%        
+        %%
         
         function bold = applyMaskToBoldFrames(this, bold)
             if this.registry.GMonly
@@ -923,6 +850,43 @@ classdef JohnsAFC < mlafc.AFC
                     error('mlafc:ValueError', 'JohnsAFC.energy_similarity')
             end
         end      
+        function e = energy(this, fc)
+            fcz = this.atanh(double(fc)); % Fisher's z
+            e = tanh(mean(fcz, 1, 'omitnan'));
+        end
+        function Z_E = Z_energy(this, fc)
+            %% cf. Bishop sec. 11.6.
+            %  @param required fc is functional connectivity, Gramian with size ~ Nseeds x Nvoxels
+            %  @return Z_E_ is numeric with size ~ 1 x Nvoxels
+            
+            reg = mlafc.AFCRegistry.instance();  
+            sl_fc_gsp_ref_mat = @reg.sl_fc_gsp_ref_mat;
+            betaT_ = reg.betaT;
+            if ~isfile(reg.Z_G_mat)
+                Z_G = this.build_Z_G();
+            else
+                ld = load(reg.Z_G_mat, 'Z_G');
+                Z_G = ld.Z_G;
+            end
+            
+            ld1 = load(sl_fc_gsp_ref_mat(1), 'sl_fc_gsp_ref'); 
+            M = size(ld1.sl_fc_gsp_ref, 1); 
+            summand = zeros(reg.ref_count, size(ld1.sl_fc_gsp_ref, 2));
+            parfor r = 1:reg.ref_count
+                matfile = feval(sl_fc_gsp_ref_mat, r); %#ok<FVAL>
+                ld = load(matfile, 'sl_fc_gsp_ref');
+                for m = 1:M
+                    Delta = tanh(atanh(fc(m,:)) - atanh(ld.sl_fc_gsp_ref(m,:))); %#ok<PFBNS>
+                    summand(r,:) = summand(r,:) + exp(-betaT_*Delta); 
+                end
+            end
+            summand 
+                     
+            % collect Z_E
+            L = reg.ref_count*M;
+            Z_E = summand .* Z_G / L;
+            save(reg.Z_E_mat, 'Z_E');
+        end
         function this = explore_fc(this, varargin)
             %% EXPLORE_FC makes connectivity maps of all GSP subjects
             %  cpu time for each refnum ~ 100 s
@@ -1022,87 +986,6 @@ classdef JohnsAFC < mlafc.AFC
             this.sl_fc_mean_ = sl_fc_mean;
             clear('sl_fc_mean')
         end  
-        function [this,ipr] = make_sl_fc_intermediates(this, varargin)
-            %% MAKE_SL_FC_INTERMEDIATES requires completion of explore_fc() which stores. 
-            %  It writes to disk intermediate objects representing the internals of makeSoftmax.
-            %  this.sl_fc_gsp_, this.sl_fc_mean_.
-            %  @param patientdir is a folder.
-            %  @param patientid is char.
-            %  @param Nframes is numeric.  If ~empty(Nframes), inferences uses only specified Nframes.
-            %  @returns instance of mlafc.JohnsAFC.
-            %  @returns inputParser.Results.
-            %  @returns softmax in this.product as ImagingContext2.
-            
-            import mlpark.*
-            
-            ip = inputParser;
-            ip.KeepUnmatched = true;
-            addRequired( ip, 'patientdir', @isfolder)
-            addRequired( ip, 'patientid', @ischar)
-            addParameter(ip, 'Nframes', [], @isnumeric)
-            parse(ip, varargin{:})
-            ipr = ip.Results;   
-            this.patientdir = ipr.patientdir;
-            this.patientid = ipr.patientid;
-            
-            %% per patients, use results of mlperceptron.PerceptronRelease factory
-            
-            mlperceptron.PerceptronFromFormat.createProbMaps(this.patientdir, this.patientid)
-            try
-                ld = load( ...
-                    fullfile(this.patientdir, 'Perceptron', ...
-                    sprintf('%s%s', this.patientid, this.registry.perceptron_resid_mat)), ...
-                    'bold_frames');
-            catch ME
-                handwarning(ME)
-                ld = load( ...
-                    fullfile(this.patientdir, 'Perceptron', ...
-                    sprintf('%s%s', this.patientid, this.registry.perceptron_uout_resid_mat)), ...
-                    'bold_frames');
-            end
-            bold_frames = applyMaskToBoldFrames(ld.bold_frames);
-                          % N_t x N_vxls ~ 2307 x 65549 single | 2307 x 18611 single
-                          % N_t is variable across studies          
-            if ~isempty(ipr.Nframes)
-                bold_frames = bold_frames(1:ipr.Nframes, :);                
-                fprintf('makeSoftmax.bold_frames.size -> %s\n', mat2str(size(bold_frames)))
-            end           
-            
-            %% per patient, build connectivity map
-            
-            sv__ = this.sv; 
-            Nsv__ = length(sv__); % ~2441
-            
-            sl_fc = zeros(Nsv__, this.N_BOLD, class(bold_frames)); 
-            acorrcoef = @this.acorrcoef;
-            parfor isv = 1:Nsv__ % 1:N_{sphere_vox}
-                bf_sv = mean(bold_frames(:, sv__{isv}), 2, 'omitnan'); %#ok<PFBNS> % N_t x 1
-                sl_fc(isv, :) = ...
-                    acorrcoef(bf_sv, bold_frames); % N_{sphere_vox} x 65549
-            end
-            
-            %% project downsampled fibers to base manifold, using energy of similarity of fc to mean field fc,
-            %% obtaning prob of dissimilarity.
-            
-            save(fullfile(this.patientdir, [this.patientid '_sl_fc.mat']), 'sl_fc')
-            this.sl_fc_last = sl_fc;    
-            
-            %% save        
-            
-            map = this.maskArrToFullArr(tanh(mean(this.atanh(sl_fc), 1))); % 1 x 147456
-            this.afc_map = map;            
-            p = this.product('fileprefix', [this.patientid '_pi_sl_fc'], 'map', map);
-            p.nifti.save();
-            map2 = this.maskArrToFullArr(tanh(mean(this.atanh(sl_fc) - this.atanh(this.sl_fc_mean_), 1))); % 1 x 147456
-            p = this.product('fileprefix', [this.patientid '_pi_sl_fc-sl_fc_mean'], 'map', map2);
-            p.nifti.save();
-            map2a = this.maskArrToFullArr(tanh(mean(abs(this.atanh(sl_fc) - this.atanh(this.sl_fc_mean_)), 1))); % 1 x 147456
-            p = this.product('fileprefix', [this.patientid '_pi_abs_sl_fc-sl_fc_mean'], 'map', map2a);
-            p.nifti.save();
-            map3 = this.maskArrToFullArr(this.energy_similarity(sl_fc)); % 1 x 147456
-            p = this.product('fileprefix', [this.patientid '_energy'], 'map', map3);
-            p.nifti.save();            
-        end
         function [this,ipr] = makeSoftmax(this, varargin)
             %% MAKESOFTMAX of dissimilarity requires completion of explore_fc() which stores 
             %  this.sl_fc_gsp_, this.sl_fc_mean_.
@@ -1140,7 +1023,7 @@ classdef JohnsAFC < mlafc.AFC
                     sprintf('%s%s', this.patientid, this.registry.perceptron_uout_resid_mat)), ...
                     'bold_frames');
             end
-            bold_frames = applyMaskToBoldFrames(ld.bold_frames); 
+            bold_frames = this.applyMaskToBoldFrames(ld.bold_frames); 
                           % N_t x N_vxls ~ 2307 x 65549 single | 2307 x 18611 single
                           % N_t is variable across studies
             if ~isempty(ipr.Nframes)
@@ -1151,26 +1034,28 @@ classdef JohnsAFC < mlafc.AFC
             %% per patient, build connectivity map
             
             sv__ = this.sv; 
-            Nsv__ = length(sv__); % ~2441
+            Nsv__ = length(sv__); % ~ 2441 | 18611
             
             sl_fc = zeros(Nsv__, this.N_BOLD, class(bold_frames)); 
             acorrcoef = @this.acorrcoef;
-            parfor isv = 1:Nsv__ % 1:N_{sphere_vox}
-                bf_sv = mean(bold_frames(:, sv__{isv}), 2, 'omitnan'); %#ok<PFBNS> % N_t x 1
-                sl_fc(isv, :) = ...
-                    acorrcoef(bf_sv, bold_frames); % N_{sphere_vox} x 65549
+            if size(sl_fc,1) == size(sl_fc,2)
+                sl_fc = acorrcoef(bold_frames, bold_frames); % this.N_BOLD x this.N_BOLD ~ 18611 x 18611
+            else
+                parfor isv = 1:Nsv__ % 1:N_{sphere_vox}
+                    bf_sv = mean(bold_frames(:, sv__{isv}), 2, 'omitnan'); %#ok<PFBNS> % N_t x 1
+                    sl_fc(isv, :) = ...
+                        acorrcoef(bf_sv, bold_frames); % N_{sphere_vox} x 65549
+                end
             end
             
-            %% project downsampled fibers to base manifold, using energy of similarity of fc to mean field fc,
-            %% obtaning prob of dissimilarity.
+            %% project fiber bundles to base manifold
             
             this.sl_fc_last = sl_fc;
-            prob = exp(-this.betaT*this.energy_similarity(sl_fc)); % 1 x this.N_BOLD
+            prob = exp(-this.registry.betaT*this.energy(sl_fc)); % 1 x this.N_BOLD
 
             %% assemble softmax
             
-            sum_prob = prob + this.sum_prob_refs(); % init with patient
-            map = prob ./ sum_prob; % Boltzmann distribution
+            map = prob ./ this.Z_energy(sl_fc); 
             map = this.maskArrToFullArr(map); % 1 x 147456
             this.afc_map = map; % ease QA
             
@@ -1180,18 +1065,8 @@ classdef JohnsAFC < mlafc.AFC
             p.nifti.save();
             
             %% save more
-            map1 = this.maskArrToFullArr(tanh(mean(this.atanh(sl_fc), 1))); % 1 x 147456
-            this.afc_map = map1;            
-            p = this.product('fileprefix', [this.patientid '_pi_sl_fc'], 'map', map1);
-            p.nifti.save();
-            map2 = this.maskArrToFullArr(tanh(mean(this.atanh(sl_fc) - this.atanh(this.sl_fc_mean_), 1))); % 1 x 147456
-            p = this.product('fileprefix', [this.patientid '_pi_sl_fc-sl_fc_mean'], 'map', map2);
-            p.nifti.save();
-            map2a = this.maskArrToFullArr(tanh(mean(abs(this.atanh(sl_fc) - this.atanh(this.sl_fc_mean_)), 1))); % 1 x 147456
-            p = this.product('fileprefix', [this.patientid '_pi_abs_sl_fc-sl_fc_mean'], 'map', map2a);
-            p.nifti.save();
-            map3 = this.maskArrToFullArr(this.energy_similarity(sl_fc)); % 1 x 147456
-            p = this.product('fileprefix', [this.patientid '_energy'], 'map', map3);
+            map1 = this.maskArrToFullArr(this.energy(sl_fc)); % 1 x 147456
+            p = this.product('fileprefix', [this.patientid '_energy'], 'map', map1);
             p.nifti.save();  
         end
         function ic = mapOfSpheres(this)
@@ -1338,23 +1213,6 @@ classdef JohnsAFC < mlafc.AFC
                 fullfile(this.patientdir, sprintf('%s_%s%s', this.patientid, client_, this.tag));
             print(fh,fileprefix,'-dpng',sprintf('-r%d',ipr.res));
         end
-        function sum_prob = sum_prob_refs(this)
-            if isfile(this.registry.sl_fc_gsp_sum_prob_mat)
-                ld = load(this.registry.sl_fc_gsp_sum_prob_mat);
-                sum_prob = ld.sum_prob;
-                return
-            end
-            sum_prob = zeros(1, this.N_BOLD, 'single');
-            for refnum = 1:this.registry.ref_count
-                try
-                    ld = load(this.registry.sl_fc_gsp_ref_mat(refnum));
-                    sum_prob = sum_prob + exp(-this.energy_similarity(ld.sl_fc_gsp_ref));
-                catch ME
-                    handwarning(ME)
-                end
-            end
-            save(this.registry.sl_fc_gsp_sum_prob_mat, 'sum_prob')
-        end
         function fc1 = visualize_Deltaz_sl_fc(this)
             globbed = globT('*_sl_fc.mat');
             assert(~isempty(globbed))
@@ -1425,14 +1283,15 @@ classdef JohnsAFC < mlafc.AFC
         
  		function this = JohnsAFC(varargin)
  			%% JOHNSAFC
-            %  @GMonly res
+            %  @GMonly restricts to Carl's GM mask.
+            %  @betaT is inverse temperature, default := 1.
 
  			this = this@mlafc.AFC(varargin{:});            
             ip = inputParser;
             ip.KeepUnmatched = true;
             addParameter(ip, 'patientid', '', @ischar)
             addParameter(ip, 'patientdir', pwd, @isfolder)
-            addParameter(ip, 'similarityTag', '_tanhmae', @ischar)
+            addParameter(ip, 'similarityTag', '', @ischar)
             addParameter(ip, 'GMonly', true, @islogical)
             addParameter(ip, 'betaT', 1, @isscalar)
             parse(ip, varargin{:})
@@ -1443,9 +1302,9 @@ classdef JohnsAFC < mlafc.AFC
             this.registry_.similarityTag = ipr.similarityTag;
             this.registry_.tag = '_GMonly';
             this.registry_.GMonly = ipr.GMonly;
+            this.registry.betaT = ipr.betaT;
             this.patientid_ = ipr.patientid;
             this.patientdir = ipr.patientdir;
-            this.betaT = ipr.betaT;
             
             this = sv_initialization(this);
             if isempty(this.sl_fc_mean_)
@@ -1455,9 +1314,6 @@ classdef JohnsAFC < mlafc.AFC
     end 
     
     %% PROTECTED
-    
-    properties (Access = protected)
-    end
     
     methods (Access = protected)
         function xfm = build_GMToYeo7_xfm_(this)
@@ -1581,6 +1437,70 @@ classdef JohnsAFC < mlafc.AFC
                     sprintf('selectedBaseManifold_x_%i_%i_%i_on_MNI152.nii.gz', x, y, z))
             end
         end
+        function buildBaseManifolds(varargin)
+            %% BUILDBASEMANIFOLDS builds representations of base manifolds for visualization.
+            %  BrainNet node center ~ [90 126 72]
+            
+            ip = inputParser;
+            addParameter(ip, 'hemisphere', 'r', @ischar)
+            parse(ip, varargin{:})
+            ipr = ip.Results;
+            ipr.hemisphere = lower(ipr.hemisphere);            
+            
+            rsns = {'smn' 'dmn' 'vis' 'fpc' 'van' 'dan' };            
+            if contains(ipr.hemisphere, 'r')
+                x = {[27 23 44] [25 15 31] [26 8 21] [38 41 30] [35 41 22] [32 15 39]}; % fsleyes coords 
+                % bb300_index = [44 118 161 199 215 265];
+            else
+                x = {[16 24 43] [21 16 28] [21 8 22] [10 42 30] [35 41 22] [18 15 40]}; % fsleyes coords
+            end
+
+            for r = 1:length(rsns)
+                ic = mlafc.JohnsAFC.buildBaseManifold(rsns{r}, x{r} + 1);
+                %ic.fsleyes
+                ic.save
+                fpout = strsplit(ic.fileprefix, '_x_');
+                fpout = [fpout{1} '_on_MNI152'];
+                mlafc.JohnsAFC.flirt_to_MNI152(ic.filename, 'fpout', fpout); %, 'interp', 'nearestneighbour');
+            end
+        end
+        function ic = buildBaseManifold(varargin)
+            %% builds base manifold for rsn using voxel coordinate x.
+            %  @param required x is coordinate vector for 711-2B_333.
+            %  @param radius is integer.
+            %  @param stride is integer.
+            %  @returns ImagingContext2 on 333-atlas with functional connectivity of x in base manifold
+            %           to all fiber bundles defined by sv_radius*_stride*.mat
+            
+            ip = inputParser;
+            addRequired(ip, 'rsn', @ischar)
+            addRequired(ip, 'x', @isvector)
+            addParameter(ip, 'radius', 2, @isscalar)
+            addParameter(ip, 'stride', 3, @isscalar)
+            addParameter(ip, 'ref_count', 500, @isscalar)
+            parse(ip, varargin{:})
+            ipr = ip.Results;
+            
+            ld = load(sprintf('sv_radius%i_stride%i.mat', ipr.radius, ipr.stride), 'sv');
+            sv = ld.sv;
+            ld = load(sprintf('sl_fc_mean_radius%i_stride%i_N%i_JohnsAFC.mat', ipr.radius, ipr.stride, ipr.ref_count), 'sl_fc_mean');
+            sl_fc_mean = ld.sl_fc_mean;
+
+            x1 = mlafc.JohnsAFC.x333_to_xMaskArr(ipr.x);
+            sl_fc_xi = sl_fc_mean(:, x1)'; % as row
+            garr = zeros(1, 65549);
+            for isv = 1:length(sv)
+                sv_set = sv{isv};
+                for isv_set = 1:length(sv_set)
+                    garr(sv_set(isv_set)) = sl_fc_xi(isv);
+                end
+            end
+            x = ipr.x(1);
+            y = ipr.x(2);
+            z = ipr.x(3);
+            ic = mlafc.JohnsAFC.glmmskArrToIC( ...
+                garr, 'fileprefix', sprintf('basemanifold_%s_x_%i_%i_%i', ipr.rsn, x, y, z));
+        end
         function buildBaseManifolds_legacy()
             %% BUILDBASEMANIFOLDS builds representations of base manifolds for visualization.
             %  xi ~ 1229 (DMN) 1463 (DMN) 1475 (DMN) 1695 1707 (FPN) 1909 1921 1933 (CON) 2138 (SMN) 712 (VIS)
@@ -1655,6 +1575,167 @@ classdef JohnsAFC < mlafc.AFC
             
             % FPC
             fb2091 = copy(fb); fb2091.img = fb.img(:,:,:,2091); fb2091.fileprefix = 'fiberbundle2091'; fb2091.save
+        end
+        function ic = glmmskArrToIC(varargin)
+            ip = inputParser;
+            addRequired(ip, 'arr', @(x) isvector(x))
+            addParameter(ip, 'fileprefix', 'glmmskArrToIC', @ischar)
+            parse(ip, varargin{:})
+            ipr = ip.Results;            
+            
+            arr = mlafc.JohnsAFC.maskArrToFullArr(ipr.arr);
+            arr = arr';            
+            img = reshape(arr, [48 64 48]);
+            img(isnan(img)) = 0;
+                         
+            img = flip(img, 1);
+            img = flip(img, 2);
+            ifc = mlfourd.ImagingFormatContext(fullfile(getenv('REFDIR'), '711-2B_333.nii.gz'));
+            ifc.img = img;
+            ifc.filepath = pwd;
+            ifc.fileprefix = ipr.fileprefix;
+            ic = mlfourd.ImagingContext2(ifc);
+        end
+        function arr = GMmskArrToFullArr(arr0)
+            %% GMMSKARRTOFULLARR
+            %  @param required arr0 is Npheres x 18611.
+            %  @return arr is Nspheres x (48*64*48).
+            
+            import mlperceptron.PerceptronRegistry
+            
+            assert(isnumeric(arr0))
+            assert(size(arr0,2) == 18611)
+            assert(ismatrix(arr0)) 
+            
+%             glmatl_ = PerceptronRegistry.read_glm_atlas_mask(); % 147456 x 1
+%             glmatl_(find(glmatl_)) = 1; %#ok<FNDSB>
+%             GMctx_ = PerceptronRegistry.read_N21_aparc_aseg_GMctx(); % 147456 x 1
+%             GMmsk_for_glm_ = GMctx_(find(glmatl_)); %#ok<FNDSB>
+%             GMmsk_indices_ = find(GMmsk_for_glm_); % 18611 x 1            
+            
+            GMctx_ = PerceptronRegistry.read_N21_aparc_aseg_GMctx(); % 147456 x 1
+            found_GMctx_ = find(GMctx_); % 18611 x 1  
+            
+            Nspheres = size(arr0,1);
+            arr = zeros(Nspheres, mlafc.AFCRegistry.instance().atlas_numel()); % Nspheres x 147456
+            if 1 == Nspheres
+                arr(found_GMctx_') = arr0;
+                return
+            end            
+            for t = 1:Nspheres
+                arr(t,found_GMctx_') = arr0(t,:);
+            end
+        end  
+    end
+    
+    methods (Hidden)
+        function [this,ipr] = makeSoftmax_legacy(this, varargin)
+            %% MAKESOFTMAX of dissimilarity requires completion of explore_fc() which stores 
+            %  this.sl_fc_gsp_, this.sl_fc_mean_.
+            %  @param patientdir is a folder.
+            %  @param patientid is char.
+            %  @param Nframes is numeric.  If ~empty(Nframes), inferences uses only specified Nframes.
+            %  @returns instance of mlafc.JohnsAFC.
+            %  @returns inputParser.Results.
+            %  @returns softmax in this.product as ImagingContext2.
+            
+            import mlpark.*
+            
+            ip = inputParser;
+            ip.KeepUnmatched = true;
+            addRequired( ip, 'patientdir', @isfolder)
+            addRequired( ip, 'patientid', @ischar)
+            addParameter(ip, 'Nframes', [], @isnumeric)
+            parse(ip, varargin{:})
+            ipr = ip.Results;   
+            this.patientdir = ipr.patientdir;
+            this.patientid = ipr.patientid;
+            
+            %% per patients, use results of mlperceptron.PerceptronRelease factory
+            
+            mlperceptron.PerceptronFromFormat.createProbMaps(this.patientdir, this.patientid)
+            try
+                ld = load( ...
+                    fullfile(this.patientdir, 'Perceptron', ...
+                    sprintf('%s%s', this.patientid, this.registry.perceptron_resid_mat)), ...
+                    'bold_frames');
+            catch ME
+                handwarning(ME)
+                ld = load( ...
+                    fullfile(this.patientdir, 'Perceptron', ...
+                    sprintf('%s%s', this.patientid, this.registry.perceptron_uout_resid_mat)), ...
+                    'bold_frames');
+            end
+            bold_frames = this.applyMaskToBoldFrames(ld.bold_frames); 
+                          % N_t x N_vxls ~ 2307 x 65549 single | 2307 x 18611 single
+                          % N_t is variable across studies
+            if ~isempty(ipr.Nframes)
+                bold_frames = bold_frames(1:ipr.Nframes, :);                
+                fprintf('makeSoftmax.bold_frames.size -> %s\n', mat2str(size(bold_frames)))
+            end           
+            
+            %% per patient, build connectivity map
+            
+            sv__ = this.sv; 
+            Nsv__ = length(sv__); % ~2441
+            
+            sl_fc = zeros(Nsv__, this.N_BOLD, class(bold_frames)); 
+            acorrcoef = @this.acorrcoef;
+            parfor isv = 1:Nsv__ % 1:N_{sphere_vox}
+                bf_sv = mean(bold_frames(:, sv__{isv}), 2, 'omitnan'); %#ok<PFBNS> % N_t x 1
+                sl_fc(isv, :) = ...
+                    acorrcoef(bf_sv, bold_frames); % N_{sphere_vox} x 65549
+            end
+            
+            %% project downsampled fibers to base manifold, using energy of similarity of fc to mean field fc,
+            %% obtaning prob of dissimilarity.
+            
+            this.sl_fc_last = sl_fc;
+            prob = exp(-this.registyr.betaT*this.energy_similarity(sl_fc)); % 1 x this.N_BOLD
+
+            %% assemble softmax
+            
+            sum_prob = prob + this.sum_prob_refs(); % init with patient
+            map = prob ./ sum_prob; % Boltzmann distribution
+            map = this.maskArrToFullArr(map); % 1 x 147456
+            this.afc_map = map; % ease QA
+            
+            %% save            
+            save(fullfile(this.patientdir, [this.patientid '_sl_fc.mat']), 'sl_fc')
+            p = this.product('map', map);
+            p.nifti.save();
+            
+            %% save more
+            map1 = this.maskArrToFullArr(tanh(mean(this.atanh(sl_fc), 1))); % 1 x 147456
+            this.afc_map = map1;            
+            p = this.product('fileprefix', [this.patientid '_pi_sl_fc'], 'map', map1);
+            p.nifti.save();
+            map2 = this.maskArrToFullArr(tanh(mean(this.atanh(sl_fc) - this.atanh(this.sl_fc_mean_), 1))); % 1 x 147456
+            p = this.product('fileprefix', [this.patientid '_pi_sl_fc-sl_fc_mean'], 'map', map2);
+            p.nifti.save();
+            map2a = this.maskArrToFullArr(tanh(mean(abs(this.atanh(sl_fc) - this.atanh(this.sl_fc_mean_)), 1))); % 1 x 147456
+            p = this.product('fileprefix', [this.patientid '_pi_abs_sl_fc-sl_fc_mean'], 'map', map2a);
+            p.nifti.save();
+            map3 = this.maskArrToFullArr(this.energy_similarity(sl_fc)); % 1 x 147456
+            p = this.product('fileprefix', [this.patientid '_energy'], 'map', map3);
+            p.nifti.save();  
+        end
+        function sum_prob = sum_prob_refs(this)
+            if isfile(this.registry.sl_fc_gsp_sum_prob_mat)
+                ld = load(this.registry.sl_fc_gsp_sum_prob_mat);
+                sum_prob = ld.sum_prob;
+                return
+            end
+            sum_prob = zeros(1, this.N_BOLD, 'single');
+            for refnum = 1:this.registry.ref_count
+                try
+                    ld = load(this.registry.sl_fc_gsp_ref_mat(refnum));
+                    sum_prob = sum_prob + exp(-this.energy_similarity(ld.sl_fc_gsp_ref));
+                catch ME
+                    handwarning(ME)
+                end
+            end
+            save(this.registry.sl_fc_gsp_sum_prob_mat, 'sum_prob')
         end
     end
 
