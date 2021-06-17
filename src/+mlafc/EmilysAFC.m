@@ -23,6 +23,13 @@ classdef EmilysAFC < mlafc.KaysAFC
     end
     
     methods (Static)
+        function ic = applyxfm(ic0, mat, out_fqfp, icref)
+            bin = fullfile(getenv('FSLDIR'), 'bin', 'flirt');
+            mlbash(sprintf('%s -in %s -applyxfm -init %s -out %s -paddingsize 0.0 -interp nearestneighbour -ref %s', bin, ic0.fqfp, mat, out_fqfp, icref.fqfp))
+            %flirt -in PT15_4_seg_111_nopriorsurg.nii.gz -applyxfm -init PT15_4_FLIRT_on_mpr1_111_brain.mat -out PT15_4_seg_111_nopriorsurg_on_mpr_111.nii.gz -paddingsize 0.0 -interp nearestneighbour -ref PT15_mpr1_on_TRIO_Y_NDC_111.nii.gz
+            ic = mlfourd.ImagingContext2([out_fqfp '.nii.gz']);
+            ic.selectImagingFormatTool()
+        end
         function buildAfcProbOnly(varargin)
             ip = inputParser;
             addOptional(ip, 'toglob', 'PT*', @ischar)

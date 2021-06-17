@@ -13,6 +13,7 @@ classdef AFCRegistry < handle
         GMonly = true
         grid_spacing = 1
         min_num_vox = 1
+        productTag = ''
         ref_count = 500
         similarityTag = ''
         sphere_radius = 1
@@ -35,6 +36,7 @@ classdef AFCRegistry < handle
         sl_fc_gsp_mat
  		sl_fc_gsp_sum_prob_mat
         sl_fc_mean_mat
+        sl_fc_std_mat
         tanh_tag
         workpath
         Z_E_mat
@@ -90,7 +92,7 @@ classdef AFCRegistry < handle
             g = ['afc_map_' datestr(now, 30)];
         end
         function g = get.fileTag(this)
-            g = sprintf('_radius%i_stride%i%s', this.sphere_radius, this.grid_spacing, this.similarityTag);
+            g = sprintf('_radius%i_stride%i%s%s', this.sphere_radius, this.grid_spacing, this.similarityTag, this.tag);
         end
         function g = get.gtm500_dir(this)
             g = fullfile(this.parkhome, 'GTM500Perceptron', ''); 
@@ -136,6 +138,11 @@ classdef AFCRegistry < handle
         function g = get.sl_fc_mean_mat(this)
             g = fullfile(this.workpath, ...
                 sprintf('sl_fc_mean_radius%i_stride%i_N%i%s%s.mat', ...
+                this.sphere_radius, this.grid_spacing, this.ref_count, this.tanh_tag, this.tag));
+        end
+        function g = get.sl_fc_std_mat(this)
+            g = fullfile(this.workpath, ...
+                sprintf('sl_fc_std_radius%i_stride%i_N%i%s%s.mat', ...
                 this.sphere_radius, this.grid_spacing, this.ref_count, this.tanh_tag, this.tag));
         end
         function g = get.Z_E_mat(this)

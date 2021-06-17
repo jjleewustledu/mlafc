@@ -31,7 +31,7 @@ classdef Test_AFC < matlab.unittest.TestCase
 	methods (Test)
         function test_mapOfSpheres(~)
             for sr = [3 2 1]
-                jafc = mlafc.JohnsAFC( ...
+                jafc = mlafc.SymmetricAFC( ...
                     'sphere_radius', sr, 'grid_spacing', sr);
                 ic = jafc.mapOfSpheres();
                 ic.fsleyes()
@@ -42,25 +42,25 @@ classdef Test_AFC < matlab.unittest.TestCase
             cd(this.WORK)
             
             tic
-            jafc = mlafc.JohnsAFC( ...
+            jafc = mlafc.SymmetricAFC( ...
                 'sphere_radius', 1, ...
                 'grid_spacing', 1, ...
                 'ref_count', 10);
             jafc = jafc.explore_fc();
             disp(jafc)
-            ic = mlafc.JohnsAFC.slfcMatToIC('sl_fc_mean_radius1_stride1_N10_tanh_GMonly.mat', 'sl_fc_mean');
+            ic = mlafc.SymmetricAFC.slfcMatToIC('sl_fc_mean_radius1_stride1_N10_tanh_GMonly.mat', 'sl_fc_mean');
             toc
             ic.save()
             ic.fsleyes()
             
             tic
-            jafc = mlafc.JohnsAFC( ...
+            jafc = mlafc.SymmetricAFC( ...
                 'sphere_radius', 2, ...
                 'grid_spacing', 3, ...
                 'ref_count', 10);
             jafc = jafc.explore_fc();
             disp(jafc)
-            ic = mlafc.JohnsAFC.slfcMatToIC('sl_fc_mean_radius2_stride3_N10_tanh_GMonly.mat', 'sl_fc_mean');
+            ic = mlafc.SymmetricAFC.slfcMatToIC('sl_fc_mean_radius2_stride3_N10_tanh_GMonly.mat', 'sl_fc_mean');
             toc
             ic.save()
             ic.fsleyes()
@@ -68,26 +68,26 @@ classdef Test_AFC < matlab.unittest.TestCase
         function test_explore_fc(this)
             setenv('WORK', this.WORK)
             cd(this.WORK)
-            jafc = mlafc.JohnsAFC( ...
+            jafc = mlafc.SymmetricAFC( ...
                 'sphere_radius', 1, ...
                 'grid_spacing', 1, ...
                 'ref_count', 500);
             jafc = jafc.explore_fc();
             disp(jafc)
-            ic = mlafc.JohnsAFC.slfcMatToIC('sl_fc_mean_radius1_stride1_N500_tanh_GMonly.mat', 'sl_fc_mean');
+            ic = mlafc.SymmetricAFC.slfcMatToIC('sl_fc_mean_radius1_stride1_N500_tanh_GMonly.mat', 'sl_fc_mean');
             ic.save()
             ic.fsleyes()
         end
         function test_explore_fc2(this)
             setenv('WORK', this.WORK)
             cd(this.WORK)
-            jafc = mlafc.JohnsAFC( ...
-                'sphere_radius', 2, ...
-                'grid_spacing', 3, ...
+            jafc = mlafc.SymmetricAFC( ...
+                'sphere_radius', 1, ...
+                'grid_spacing', 1, ...
                 'ref_count', 500);
             jafc = jafc.explore_fc2();
             disp(jafc)
-            ic = mlafc.JohnsAFC.slfcMatToIC('sl_fc_mean_radius2_stride3_N500_tanh_JohnsAFC.mat', 'sl_fc_mean');
+            ic = mlafc.SymmetricAFC.slfcMatToIC('sl_fc_std_radius1_stride1_N500_tanh_GMonly.mat', 'sl_fc_std');
             ic.save()
             ic.fsleyes()
         end
@@ -102,7 +102,7 @@ classdef Test_AFC < matlab.unittest.TestCase
                 try
                     pdir = fullfile(getenv('WORK'), pts{ip}, '');
                     pwd0 = pushd(pdir);
-                    jafc = mlafc.JohnsAFC( ...
+                    jafc = mlafc.SymmetricAFC( ...
                         'sphere_radius', 2, ...
                         'grid_spacing', 3, ...
                         'ref_count', 500);
@@ -135,23 +135,38 @@ classdef Test_AFC < matlab.unittest.TestCase
                 end
             end            
         end
-        function test_makeSoftmax_mae(this)
+        function test_makeSoftmax1(this)
             setenv('WORK', this.WORK)
             cd(this.WORK)
             pts = globFoldersT('PT*');
-            for ip = 1:length(pts)
-                if strcmp(pts{ip}, 'PTmore')
-                    continue
-                end
+            parfor ip = 1:length(pts)
                 try
                     pdir = fullfile(getenv('WORK'), pts{ip}, '');
                     pwd0 = pushd(pdir);
-                    jafc = mlafc.JohnsAFC( ...
-                        'sphere_radius', 2, ...
-                        'grid_spacing', 3, ...
-                        'ref_count', 500, ...
-                        'similarityTag', '_mae');
+                    jafc = mlafc.SymmetricAFC( ...
+                        'betaT', 1, ...
+                        'productTag', '_betaT1', ...
+                        'Nframes', 1200);
                     jafc = jafc.makeSoftmax(pwd, pts{ip});
+                    disp(jafc)
+                    popd(pwd0)
+                catch ME
+                    handwarning(ME)
+                end
+            end            
+        end
+        function test_makeSoftmaxGsp(this)
+            setenv('WORK', this.WORK)
+            cd(this.WORK)
+            pts = globFoldersT('Sub*_Ses1');
+            parfor ip = 1:length(pts)
+                try
+                    pdir = fullfile(getenv('WORK'), pts{ip}, '');
+                    pwd0 = pushd(pdir);
+                    jafc = mlafc.SymmetricAFC( ...
+                        'productTag', '_gsp');
+                    jafc = jafc.makeSoftmax(pwd, pts{ip});
+                    disp(jafc)
                     popd(pwd0)
                 catch ME
                     handwarning(ME)
@@ -166,7 +181,7 @@ classdef Test_AFC < matlab.unittest.TestCase
                 try
                     pdir = fullfile(getenv('WORK'), pts{ip}, '');
                     pwd0 = pushd(pdir);
-                    jafc = mlafc.JohnsAFC( ...
+                    jafc = mlafc.SymmetricAFC( ...
                         'sphere_radius', 2, ...
                         'grid_spacing', 3, ...
                         'ref_count', 500);
@@ -190,7 +205,7 @@ classdef Test_AFC < matlab.unittest.TestCase
                 try
                     pdir = fullfile(getenv('WORK'), pts{ip}, '');
                     pwd0 = pushd(pdir);
-                    jafc = mlafc.JohnsAFC( ...
+                    jafc = mlafc.SymmetricAFC( ...
                         'sphere_radius', 2, ...
                         'grid_spacing', 3, ...
                         'ref_count', 500);
@@ -205,8 +220,8 @@ classdef Test_AFC < matlab.unittest.TestCase
         function test_fullArrToMaskArr(this)
             atl = mlfourd.ImagingFormatContext('711-2B_333.nii.gz');
             farr = reshape(flip(flip(atl.img,1),2), [1 48*64*48]);
-            garr = mlafc.JohnsAFC.fullArrToMaskArr(farr);
-            farr = mlafc.JohnsAFC.maskArrToFullArr(garr);
+            garr = mlafc.SymmetricAFC.fullArrToMaskArr(farr);
+            farr = mlafc.SymmetricAFC.maskArrToFullArr(garr);
             atl.img = reshape(farr, [48 64 48]);
             atl.img = flip(flip(atl.img, 1), 2);
             atl.fileprefix = 'test';
@@ -214,15 +229,15 @@ classdef Test_AFC < matlab.unittest.TestCase
         end
         function test_x333_to_xMaskArr(this)
             if ~this.registry.GMonly
-                this.assertEqual(mlafc.JohnsAFC.x333_to_xMaskArr([23 48 21]), 25878)
-                this.assertEqual(mlafc.JohnsAFC.x333_to_xMaskArr([36 48 21]), 25865)
-                this.assertEqual(mlafc.JohnsAFC.x333_to_xMaskArr([11 14 35]), 55267)
+                this.assertEqual(mlafc.SymmetricAFC.x333_to_xMaskArr([23 48 21]), 25878)
+                this.assertEqual(mlafc.SymmetricAFC.x333_to_xMaskArr([36 48 21]), 25865)
+                this.assertEqual(mlafc.SymmetricAFC.x333_to_xMaskArr([11 14 35]), 55267)
             end
         end
         function test_buildFiberBundles_contrast(this)
             setenv('WORK', this.WORK)
             cd(this.WORK)
-            sl_fc_mean_ic = mlafc.JohnsAFC.slfcMatToIC(this.registry.sl_fc_mean_mat, 'sl_fc_mean');
+            sl_fc_mean_ic = mlafc.SymmetricAFC.slfcMatToIC(this.registry.sl_fc_mean_mat, 'sl_fc_mean');
             pts = globFoldersT('PT*');
             for ip = 1:length(pts)
                 if strcmp(pts{ip}, 'PTmore')
@@ -231,7 +246,7 @@ classdef Test_AFC < matlab.unittest.TestCase
                 try
                     pdir = fullfile(getenv('WORK'), pts{ip}, '');
                     pwd0 = pushd(pdir);
-                    mlafc.JohnsAFC.buildFiberBundles_contrast( ...
+                    mlafc.SymmetricAFC.buildFiberBundles_contrast( ...
                         [pts{ip} '_sl_fc.mat'], ...
                         'sl_fc_mean_ic', sl_fc_mean_ic)
                     popd(pwd0)

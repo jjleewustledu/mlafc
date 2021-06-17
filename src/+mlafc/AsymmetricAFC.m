@@ -1,5 +1,5 @@
-classdef JohnsAFC < mlafc.AFC
-	%% JOHNSAFC  
+classdef AsymmetricAFC < mlafc.AFC
+	%% AsymmetricAFC  
 
 	%  $Revision$
  	%  was created 04-Apr-2021 12:25:45 by jjlee,
@@ -11,6 +11,7 @@ classdef JohnsAFC < mlafc.AFC
  		GMctx % ImagingContext2
         GMToYeo7_xfm
         N_BOLD
+        sv
         Yeo7
         Yeo17
     end
@@ -21,34 +22,6 @@ classdef JohnsAFC < mlafc.AFC
     end
     
     methods (Static)
-        function acc = acorrcoef(A, B)
-            %% ACORRCOEF builds the corrcoef (Ns x Nv) for A (Nt x Ns) and B (Nt x Nv).
-            %  Ns ~ num spheres.
-            %  Nv ~ num voxels.
-            
-            [Nt,Ns] = size(A);
-            [Nt_,Nv] = size(B);
-            assert(Nt == Nt_)
-            
-            muA = mean(A, 1); % 1 x Ns
-            muB = mean(B, 1); % 1 x Nv
-            
-            dA = A - muA(ones(Nt,1),:); % Nt x Ns
-            dB = B - muB(ones(Nt,1),:); % Nt x Nv
-            
-            cov = dA'*dB; % Ns x Nv
-            
-            sigmaA = sqrt(sum(dA.^2, 1))'; % Ns x 1
-            sigmaB = sqrt(sum(dB.^2, 1));  % 1  x Nv
-            
-            acc = cov ./ (sigmaA(:,ones(1,Nv)) .* sigmaB(ones(Ns,1),:)); % Ns x Nv
-        end
-        function x = atanh(x)
-            %% avoids singularities for x -> {-1, 1}
-            
-            x(x > 1-eps) = 1 - eps;
-            x(x < -(1-eps)) = -(1 - eps);
-        end
         function brainNet_xi_x(coord, rsn, varargin)
             %% renders surfaces of fiber bundles for seed xi and base manifolds for voxel x.
             %  Requires Matlab R2014b.
@@ -66,7 +39,7 @@ classdef JohnsAFC < mlafc.AFC
             workpath = pwd; % fullfile(getenv('HOME'), 'Box', 'Leuthardt_Epilepsy_Project', 'Segmentations_06_and_07_2020', '');
             
             if ~verLessThan('matlab', '8.5')
-                error('mlafc:VersionError', 'JohnsAFC.brainNet_xi_x requires Matlab R2014')
+                error('mlafc:VersionError', 'AsymmetricAFC.brainNet_xi_x requires Matlab R2014')
             end
             assert(ischar(coord))
             assert(ischar(rsn))
@@ -93,7 +66,7 @@ classdef JohnsAFC < mlafc.AFC
             ipr = ip.Results;
             
             if ~verLessThan('matlab', '8.5')
-                error('mlafc:VersionError', 'JohnsAFC.brainNet_xi_x requires Matlab R2014')
+                error('mlafc:VersionError', 'AsymmetricAFC.brainNet_xi_x requires Matlab R2014')
             end
             
             BrainNet_MapCfg('~/MATLAB-Drive/BrainNetViewer_20191031/Data/SurfTemplate/BrainMesh_Ch2.nv', ...
@@ -136,7 +109,7 @@ classdef JohnsAFC < mlafc.AFC
         end
         function buildFiberBundles()
             reg = mlafc.AFCRegistry.instance();
-            sl_fc_mean_ic = mlafc.JohnsAFC.slfcMatToIC(reg.sl_fc_mean_mat, 'sl_fc_mean');
+            sl_fc_mean_ic = mlafc.AsymmetricAFC.slfcMatToIC(reg.sl_fc_mean_mat, 'sl_fc_mean');
             fb = copy(sl_fc_mean_ic.nifti);
 
             fb_smn = copy(fb); fb_smn.img = fb.img(:,:,:,2433); fb_smn.fileprefix = 'fiberbundle_smn'; fb_smn.save
@@ -146,12 +119,12 @@ classdef JohnsAFC < mlafc.AFC
             fb_van = copy(fb); fb_van.img = fb.img(:,:,:,1007); fb_van.fileprefix = 'fiberbundle_van'; fb_van.save
             fb_dan = copy(fb); fb_dan.img = fb.img(:,:,:,2332); fb_dan.fileprefix = 'fiberbundle_dan'; fb_dan.save
             
-            mlafc.JohnsAFC.flirt_to_MNI152('fiberbundle_smn.nii.gz')
-            mlafc.JohnsAFC.flirt_to_MNI152('fiberbundle_dmn.nii.gz')
-            mlafc.JohnsAFC.flirt_to_MNI152('fiberbundle_vis.nii.gz')
-            mlafc.JohnsAFC.flirt_to_MNI152('fiberbundle_fpc.nii.gz')
-            mlafc.JohnsAFC.flirt_to_MNI152('fiberbundle_van.nii.gz')
-            mlafc.JohnsAFC.flirt_to_MNI152('fiberbundle_dan.nii.gz')
+            mlafc.AsymmetricAFC.flirt_to_MNI152('fiberbundle_smn.nii.gz')
+            mlafc.AsymmetricAFC.flirt_to_MNI152('fiberbundle_dmn.nii.gz')
+            mlafc.AsymmetricAFC.flirt_to_MNI152('fiberbundle_vis.nii.gz')
+            mlafc.AsymmetricAFC.flirt_to_MNI152('fiberbundle_fpc.nii.gz')
+            mlafc.AsymmetricAFC.flirt_to_MNI152('fiberbundle_van.nii.gz')
+            mlafc.AsymmetricAFC.flirt_to_MNI152('fiberbundle_dan.nii.gz')
         end
         function buildFiberBundles_contrast(varargin)
             reg = mlafc.AFCRegistry.instance();
@@ -163,11 +136,11 @@ classdef JohnsAFC < mlafc.AFC
             parse(ip, varargin{:})
             ipr = ip.Results;
             if isempty(ipr.sl_fc_mean_ic)
-                ipr.sl_fc_mean_ic = mlafc.JohnsAFC.slfcMatToIC(reg.sl_fc_mean_mat, 'sl_fc_mean');
+                ipr.sl_fc_mean_ic = mlafc.AsymmetricAFC.slfcMatToIC(reg.sl_fc_mean_mat, 'sl_fc_mean');
             end
             
-            ic = mlafc.JohnsAFC.slfcMatToIC(ipr.matname, 'sl_fc');
-            ic = tanh(mlafc.JohnsAFC.atanh(ic) - mlafc.JohnsAFC.atanh(ipr.sl_fc_mean_ic));
+            ic = mlafc.AsymmetricAFC.slfcMatToIC(ipr.matname, 'sl_fc');
+            ic = tanh(mlafc.AsymmetricAFC.atanh(ic) - mlafc.AsymmetricAFC.atanh(ipr.sl_fc_mean_ic));
             ic.filepath = pwd;
             fb = copy(ic.nifti);
             
@@ -187,12 +160,12 @@ classdef JohnsAFC < mlafc.AFC
                 fb_dan = copy(fb); fb_dan.img = fb.img(:,:,:,2337); fb_dan.fileprefix = 'fiberbundle_dan'; fb_dan.save
             end
             
-            mlafc.JohnsAFC.flirt_to_MNI152('fiberbundle_smn.nii.gz')
-            mlafc.JohnsAFC.flirt_to_MNI152('fiberbundle_dmn.nii.gz')
-            mlafc.JohnsAFC.flirt_to_MNI152('fiberbundle_vis.nii.gz')
-            mlafc.JohnsAFC.flirt_to_MNI152('fiberbundle_fpc.nii.gz')
-            mlafc.JohnsAFC.flirt_to_MNI152('fiberbundle_van.nii.gz')
-            mlafc.JohnsAFC.flirt_to_MNI152('fiberbundle_dan.nii.gz')
+            mlafc.AsymmetricAFC.flirt_to_MNI152('fiberbundle_smn.nii.gz')
+            mlafc.AsymmetricAFC.flirt_to_MNI152('fiberbundle_dmn.nii.gz')
+            mlafc.AsymmetricAFC.flirt_to_MNI152('fiberbundle_vis.nii.gz')
+            mlafc.AsymmetricAFC.flirt_to_MNI152('fiberbundle_fpc.nii.gz')
+            mlafc.AsymmetricAFC.flirt_to_MNI152('fiberbundle_van.nii.gz')
+            mlafc.AsymmetricAFC.flirt_to_MNI152('fiberbundle_dan.nii.gz')
         end
         function buildFiberBundles_nocontrast(varargin)
             ip = inputParser;
@@ -201,7 +174,7 @@ classdef JohnsAFC < mlafc.AFC
             parse(ip, varargin{:})
             ipr = ip.Results;
             
-            ic = mlafc.JohnsAFC.slfcMatToIC(ipr.matname, 'sl_fc');
+            ic = mlafc.AsymmetricAFC.slfcMatToIC(ipr.matname, 'sl_fc');
             ic.filepath = pwd;
             fb = copy(ic.nifti);
             
@@ -221,12 +194,12 @@ classdef JohnsAFC < mlafc.AFC
                 fb_dan = copy(fb); fb_dan.img = fb.img(:,:,:,2337); fb_dan.fileprefix = 'fiberbundle_dan_noDelta'; fb_dan.save
             end
             
-            mlafc.JohnsAFC.flirt_to_MNI152('fiberbundle_smn_noDelta.nii.gz')
-            mlafc.JohnsAFC.flirt_to_MNI152('fiberbundle_dmn_noDelta.nii.gz')
-            mlafc.JohnsAFC.flirt_to_MNI152('fiberbundle_vis_noDelta.nii.gz')
-            mlafc.JohnsAFC.flirt_to_MNI152('fiberbundle_fpc_noDelta.nii.gz')
-            mlafc.JohnsAFC.flirt_to_MNI152('fiberbundle_van_noDelta.nii.gz')
-            mlafc.JohnsAFC.flirt_to_MNI152('fiberbundle_dan_noDelta.nii.gz')
+            mlafc.AsymmetricAFC.flirt_to_MNI152('fiberbundle_smn_noDelta.nii.gz')
+            mlafc.AsymmetricAFC.flirt_to_MNI152('fiberbundle_dmn_noDelta.nii.gz')
+            mlafc.AsymmetricAFC.flirt_to_MNI152('fiberbundle_vis_noDelta.nii.gz')
+            mlafc.AsymmetricAFC.flirt_to_MNI152('fiberbundle_fpc_noDelta.nii.gz')
+            mlafc.AsymmetricAFC.flirt_to_MNI152('fiberbundle_van_noDelta.nii.gz')
+            mlafc.AsymmetricAFC.flirt_to_MNI152('fiberbundle_dan_noDelta.nii.gz')
         end
         function buildPiFiberBundles(varargin)
             reg = mlafc.AFCRegistry.instance();
@@ -244,14 +217,14 @@ classdef JohnsAFC < mlafc.AFC
             
             ld = load(ipr.matname, 'sl_fc');
             sl_fc = ld.sl_fc;
-            pi_energy = tanh(mean(mlafc.JohnsAFC.atanh(double(sl_fc)) - mlafc.JohnsAFC.atanh(double(ipr.sl_fc_mean)), 1, 'omitnan')); % 1 x 65546
+            pi_energy = tanh(mean(mlafc.AsymmetricAFC.atanh(double(sl_fc)) - mlafc.AsymmetricAFC.atanh(double(ipr.sl_fc_mean)), 1, 'omitnan')); % 1 x 65546
             pi_energy_mat = sprintf('%s_pi_energy.mat', ipr.pid);
             save(pi_energy_mat, 'pi_energy')
             
-            ic = mlafc.JohnsAFC.slfcMatToIC(pi_energy_mat, 'pi_energy');
+            ic = mlafc.AsymmetricAFC.slfcMatToIC(pi_energy_mat, 'pi_energy');
             ifc = copy(ic.nifti); 
             ifc.fileprefix = 'pi_fiberbundles'; ifc.save            
-            mlafc.JohnsAFC.flirt_to_MNI152('pi_fiberbundles.nii.gz')
+            mlafc.AsymmetricAFC.flirt_to_MNI152('pi_fiberbundles.nii.gz')
         end
         function buildSoftmaxOnResection(varargin)
             ip = inputParser;
@@ -291,9 +264,9 @@ classdef JohnsAFC < mlafc.AFC
                 try
                     % bet FLIRT_111
                     if ipr.betZ
-                        resectionb = mlafc.JohnsAFC.betZ(resection{1}, ipr.betFrac);
+                        resectionb = mlafc.AsymmetricAFC.betZ(resection{1}, ipr.betFrac);
                     else
-                        resectionb = mlafc.JohnsAFC.bet(resection{1}, ipr.betFrac);
+                        resectionb = mlafc.AsymmetricAFC.bet(resection{1}, ipr.betFrac);
                     end
                     resectionb.fsleyes()
                     
@@ -306,7 +279,7 @@ classdef JohnsAFC < mlafc.AFC
                         opts));
                     
                     % quality control, viz.
-                    mlafc.JohnsAFC.visualizeAfcProb(g{1})
+                    mlafc.AsymmetricAFC.visualizeAfcProb(g{1})
                 catch ME
                     warning('mlafc:RuntimeError', r)
                     handerror(ME)
@@ -319,137 +292,22 @@ classdef JohnsAFC < mlafc.AFC
             %% cf. Bishop sec. 11.6.
             %  @return Z_G is numeric with size ~ 1 x Nvoxels
             
+            import mlafc.AsymmetricAFC
             reg = mlafc.AFCRegistry.instance();
             sl_fc_gsp_ref_mat = @reg.sl_fc_gsp_ref_mat;
             betaT_ = reg.betaT;
+            ldm = load(reg.sl_fc_mean_mat, 'sl_fc_mean');
+            sl_fc_mean = ldm.sl_fc_mean;
             
-            ld1 = load(sl_fc_gsp_ref_mat(1), 'sl_fc_gsp_ref');            
-            M = size(ld1.sl_fc_gsp_ref, 1);
-            Z_G_ = zeros(reg.ref_count, size(ld1.sl_fc_gsp_ref, 2));            
-            parfor r = 1:reg.ref_count
-                matfile = feval(sl_fc_gsp_ref_mat, r); %#ok<FVAL>
-                ld = load(matfile, 'sl_fc_gsp_ref');
-                for m = 1:M
-                    Z_G_(r,:) = Z_G_(r,:) + exp(-betaT_*ld.sl_fc_gsp_ref(m,:));
-                end
+            Z_G = zeros(size(ldm.sl_fc_mean));
+            for r = 1:reg.ref_count
+                %matfile = feval(sl_fc_gsp_ref_mat, r); %#ok<FVAL>
+                ld = load(sl_fc_gsp_ref_mat(r), 'sl_fc_gsp_ref');
+                energy = AsymmetricAFC.abs_Delta(ld.sl_fc_gsp_ref, sl_fc_mean);
+                Z_G = Z_G + exp(-betaT_*energy);
             end
-            Z_G = sum(Z_G_, 1);
             
             save(reg.Z_G_mat, 'Z_G');
-        end
-        function calc_jsdiv(varargin)
-            ip = inputParser;
-            addOptional(ip, 'toglob', 'PT*', @ischar)
-            addParameter(ip, 'outTag', '_softmax', @ischar)
-            parse(ip, varargin{:})
-            ipr = ip.Results;
-                        
-            for g = globFoldersT(ipr.toglob)
-                pwd0 = pushd(g{1});
-                
-                segmentation = globT([g{1} '_*_segmentation_final_111.nii.gz']);
-                seg = mlfourd.ImagingContext2(segmentation{1});
-                afc_prob = mlfourd.ImagingContext2([g{1} ipr.outTag '_111.nii.gz']);
-                gm = mlfourd.ImagingContext2(fullfile(getenv('REFDIR'), 'gm3d_111.nii.gz')); % no cerebellum
-%                gm = gm.masked(double(afc_prob.numgt(0.008))); % 0.008 is the left tail of histograms                
-                jsdiv = afc_prob.jsdiv(seg, gm);
-                fprintf('jsdiv(%s) = %g\n',afc_prob.fileprefix, jsdiv)
-                
-                popd(pwd0)
-            end
-        end
-        function v = calc_violinplot(varargin)
-            ip = inputParser;
-            addOptional(ip, 'toglob', 'PT*', @ischar)
-            addParameter(ip, 'filestring', '', @ischar)
-            addParameter(ip, 'outTag', '_softmax', @ischar)
-            addParameter(ip, 'ylim', [0.0018 0.0023], @isnumeric)
-            addParameter(ip, 'ylabel', 'probability abnormality')
-            addParameter(ip, 'interpreter', 'tex', @ischar)
-            parse(ip, varargin{:})
-            ipr = ip.Results;
-            globbed = globFoldersT(ipr.toglob);
-            reg = mlafc.AFCRegistry.instance();
-            
-            %mask = mlfourd.ImagingContext2(fullfile(getenv('REFDIR'), 'gm3d.nii.gz'));
-            %mask = mask.binarized();
-            mask = mlafc.JohnsAFC.cortical_ribbon_mask();
-            mask = mask.binarized();
-            Nvxl = dipsum(mask);
-            Npts = length(globbed);
-            data = zeros(Nvxl, Npts, 'single');
-            
-            if strcmp(computer, 'MACI64')
-                home = '/Users/jjlee/Box/Leuthardt_Epilepsy_Project/Segmentations_06_and_07_2020';
-            else
-                home = '/data/nil-bluearc/shimony/jjlee/FocalEpilepsy';
-            end
-            for ig = 1:Npts
-                try
-                    cd(fullfile(home, globbed{ig}));
-                    if isempty(ipr.filestring)
-                        afc_prob = mlfourd.ImagingContext2(sprintf('%s_softmax%s.nii.gz', ...
-                            globbed{ig}, reg.fileTag)); % [g{1} ipr.outTag '_111.nii.gz']);
-                    else
-                        afc_prob = mlfourd.ImagingContext2(sprintf('%s_%s%s.nii.gz', ...
-                            globbed{ig}, ipr.filestring, reg.fileTag));
-                    end
-                    img = afc_prob.nifti.img;
-                    fprintf('gm sum -> %g\n', dipsum(img))
-                    data(:,ig) = reshape(img(logical(mask)), [Nvxl 1]); 
-                catch ME
-                    handwarning(ME)
-                end
-            end
-            cd(home)
-
-            h = figure;
-            %labels = globbed;
-            %labels = {'PT15 (Ia)' 'PT26 (IV)' 'PT28 (Ia)' 'PT29 (IV)' 'PT34 (IIa)' 'PT35 (IV)' 'PT36 (Ia)'};  
-            labels = {'2 (Ia)' '5 (IV)' '1 (Ia)' '6 (IV)' '4 (IIa)' '7 (IV)' '3 (Ia)'};            
-            ordering = [3 1 7 5 2 4 6]; % pt28, pt15, pt36, pt34, pt26, pt29, p35
-            data(:,:) = data(:,ordering);
-            labels = labels(ordering);
-            
-            v = violinplot(data, labels, 'ShowData', false, 'ShowNotches', false);
-            if ~isempty(ipr.ylim)
-                ylim(ipr.ylim)
-            end
-            ax = gca;
-            ax.YRuler.Exponent = 0;
-            %ytickformat('%.3f')
-            set(gca, 'fontsize', 14)
-            ylabel(ipr.ylabel, 'Interpreter', ipr.interpreter, 'FontSize', 18)
-            xlabel('patient ID (Engel class)', 'FontSize', 18)
-
-            savefig(h, ...
-                sprintf('calc_violinplot%s_%ipts.fig', reg.fileTag, Npts))
-            figs = get(0, 'children');
-            saveas(figs(1), ...
-                sprintf('calc_violinplot%s_%ipts.png', reg.fileTag, Npts))
-%                close(figs(1))
-        end
-        function flirt_to_MNI152(varargin)
-            %  @param required nii is a NIfTI filename.
-            %  @param interp is in {trilinear,nearestneighbour,sinc,spline}.
-            
-            ip = inputParser;
-            addRequired(ip, 'nii', @isfile)
-            addParameter(ip, 'fpout', '', @ischar)
-            addParameter(ip, 'interp', 'trilinear', @ischar)
-            parse(ip, varargin{:})
-            ipr = ip.Results;
-            
-            xfm = fullfile(getenv('REFDIR'), '711-2B_333_on_MNI152_T1_1mm.mat');
-            if isempty(ipr.fpout)
-                fnout = [myfileprefix(ipr.nii) '_on_MNI152.nii.gz'];
-            else
-                fnout = [ipr.fpout '.nii.gz'];
-            end
-            ref = fullfile(getenv('REFDIR'), '711-2B_333_on_MNI152_T1_1mm.nii.gz');
-            mlbash(sprintf( ...
-                '/usr/local/fsl/bin/flirt -in %s -applyxfm -init %s -out %s -paddingsize 0.0 -interp %s -ref %s', ...
-                ipr.nii, xfm, fnout, ipr.interp, ref))
         end
         function garr = fullArrToMaskArr(farr)
             %% FULLARRTOMASKARR
@@ -460,7 +318,7 @@ classdef JohnsAFC < mlafc.AFC
             assert(size(farr,2) == 48*64*48)
             assert(ismatrix(farr))
             
-            mask_ = mlafc.JohnsAFC.readMaskArr();
+            mask_ = mlafc.AsymmetricAFC.readMaskArr();
             mask_(find(mask_)) = 1;   %#ok<FNDSB>
             found_mask_ = find(mask_); % Nmasked x 1
             
@@ -483,7 +341,7 @@ classdef JohnsAFC < mlafc.AFC
             assert(size(garr,2) == 65549 || size(garr,2) == 18611)
             assert(ismatrix(garr))        
             
-            mask_ = mlafc.JohnsAFC.readMaskArr();
+            mask_ = mlafc.AsymmetricAFC.readMaskArr();
             mask_(find(mask_)) = 1;   %#ok<FNDSB>
             found_mask_ = find(mask_); % Nmasked x 1
             
@@ -504,7 +362,7 @@ classdef JohnsAFC < mlafc.AFC
             parse(ip, varargin{:})
             ipr = ip.Results;            
             
-            arr = mlafc.JohnsAFC.maskArrToFullArr(ipr.arr);
+            arr = mlafc.AsymmetricAFC.maskArrToFullArr(ipr.arr);
             arr = arr';            
             img = reshape(arr, [48 64 48]);
             img(isnan(img)) = 0;
@@ -517,84 +375,10 @@ classdef JohnsAFC < mlafc.AFC
             ifc.fileprefix = ipr.fileprefix;
             ic = mlfourd.ImagingContext2(ifc);
         end
-        function ic = cortical_ribbon_mask()
-            pth = fullfile(getenv('MLPDIR'), 'Reference_Images', '');            
-            ic = mlfourd.ImagingContext2( ...
-                fullfile(pth, 'N21_aparc+aseg_GMctx_on_711-2V_333_avg_zlt0.5_gAAmask_v1.4dfp.hdr'));
-        end  
-        function ic = imagingContext_N21_aparc_aseg_GMctx()
-            import mlperceptron.*
-            pth = fullfile(getenv('MLPDIR'), 'Reference_Images', '');            
-            ic = mlfourd.ImagingContext2( ...
-                fullfile(pth, 'N21_aparc+aseg_GMctx_on_711-2V_333_avg_zlt0.5_gAAmask_v1.4dfp.hdr'));
-        end        
-        function ic = imagingContext_glm_atlas_mask()
-            import mlperceptron.*
-            pth = fullfile(getenv('MLPDIR'), 'Reference_Images', ''); 
-            ic = mlfourd.ImagingContext2( ...
-                fullfile(pth, 'glm_atlas_mask_333.4dfp.hdr'));
+        function pi_fc = pi(fc)
+            fcz = mlafc.AsymmetricAFC.atanh(double(fc)); % Fisher's z
+            pi_fc = tanh(mean(fcz, 1, 'omitnan'));
         end
-        function d = kldiv(corrP, corrQ)
-            %% KLDIV estimates divergence between the prob of FC for data and the prob of FC for a model
-            %  using complete asymmetric correlation matrices without downsampling.
-            %  @param corrP describes spheres-fiber x base for data.
-            %  @param corrQ describes spheres-fiber x base for model.
-            %  @return KL divergence in vector ~ 1 x base in nats.
-            
-            P = exp(corrP); % prob of corr matrix for data
-            P(isnan(P)) = eps;
-            P(P < eps) = eps; % manage round-off
-            for ib = 1:size(P,2)
-                P(:,ib) = P(:,ib) / sum(P(:,ib),1); % ~ prob normalized to each base voxel
-            end
-            
-            Q = exp(corrQ); % prob of corr matrix for model
-            Q(isnan(Q)) = eps;
-            Q(Q < eps) = eps; % manage round-off
-            for ib = 1:size(Q,2)
-                Q(:,ib) = Q(:,ib) / sum(Q(:,ib),1); % ~ prob normalized to each base voxel
-            end
-            
-            d = sum(P .* (log(P) - log(Q)), 1); % marginalize fibers
-        end
-        function ic = perceptronMatToIC(matname, objname, varargin)
-            %% PERCEPTRONMATTOIC
-            %  @param matname is a Percptron mat file.
-            %  @param objname is the name of the sought object.
-            %  @param flip1 is logical.
-            %  @param flip2 is logical.
-            
-            ip = inputParser;
-            addRequired(ip, 'matname', @isfile)
-            addRequired(ip, 'objname', @ischar)
-            addParameter(ip, 'flip1', true, @islogical)
-            addParameter(ip, 'flip2', true, @islogical)
-            parse(ip, matname, objname, varargin{:})
-            ipr = ip.Results;
-            
-            assert(isfile(matname))
-            assert(ischar(objname))
-            ld = load(matname, objname);
-            obj = ld.(objname);
-            obj = mlafc.JohnsAFC.maskArrToFullArr(obj);
-            obj = obj';
-            
-            Nt = size(obj, 2);
-            img = reshape(obj, [48 64 48 Nt]);
-            img(isnan(img)) = 0;
-            
-            if ipr.flip1                
-                img = flip(img, 1);
-            end
-            if ipr.flip2
-                img = flip(img, 2);
-            end
-            ifc = mlfourd.ImagingFormatContext(fullfile(getenv('REFDIR'), '711-2B_333.nii.gz'));
-            ifc.img = img;
-            ifc.filepath = pwd;
-            ifc.fileprefix = myfileprefix(matname);
-            ic = mlfourd.ImagingContext2(ifc);
-        end     
         function product = prepareMSC(varargin)
             %% Usage:  product createMscProbMaps(<subIdx>[, 'mscSubjectsMat', <mscSubjectsMat>])
             %  e.g.:   createMscProbMaps(6)
@@ -674,7 +458,7 @@ classdef JohnsAFC < mlafc.AFC
             if 3 == ndims(obj)
                 obj = squeeze(obj(ipr.refnum, :, :));
             end
-            obj = mlafc.JohnsAFC.maskArrToFullArr(obj);
+            obj = mlafc.AsymmetricAFC.maskArrToFullArr(obj);
             obj = obj';
             
             Nspheres = size(obj, 2);
@@ -785,7 +569,7 @@ classdef JohnsAFC < mlafc.AFC
             img(x,y,z) = 1;
             img = flip(flip(img, 1), 2);
             farr = reshape(img, [1 48*64*48]);            
-            garr = mlafc.JohnsAFC.fullArrToMaskArr(farr);
+            garr = mlafc.AsymmetricAFC.fullArrToMaskArr(farr);
             x1 = find(garr);
             assert(isscalar(x1))
         end
@@ -813,6 +597,9 @@ classdef JohnsAFC < mlafc.AFC
         function g = get.N_BOLD(this)
             g = this.registry.N_BOLD;
         end
+        function g = get.sv(this)
+            g = this.sv_;
+        end
         function g = get.Yeo7(~)
             g = mlfourd.ImagingContext2( ...
                 fullfile(getenv('REFDIR'), 'Yeo', 'Yeo2011_7Networks_333.nii.gz'));
@@ -829,6 +616,9 @@ classdef JohnsAFC < mlafc.AFC
                 mask = this.GMmsk_for_glm_;                
                 bold = bold(:, logical(mask));
             end
+        end
+        function e = energy(this, fc)
+            e = this.abs_Delta(fc, this.sl_fc_mean_);
         end
         function e = energy_similarity(this, fc)
             %% ENERGY_SIMILARITY <= 0.  Greater energy_similarity describes greater similarity between data and normal model.  
@@ -847,18 +637,15 @@ classdef JohnsAFC < mlafc.AFC
                 case '_mean2'
                     e = mean(this.atanh(double(this.acorrcoef(fc, this.sl_fc_mean_))), 2, 'omitnan')'; % z-score
                 otherwise
-                    error('mlafc:ValueError', 'JohnsAFC.energy_similarity')
+                    error('mlafc:ValueError', 'AsymmetricAFC.energy_similarity')
             end
         end      
-        function e = energy(this, fc)
-            fcz = this.atanh(double(fc)); % Fisher's z
-            e = tanh(mean(fcz, 1, 'omitnan'));
-        end
         function Z_E = Z_energy(this, fc)
             %% cf. Bishop sec. 11.6.
             %  @param required fc is functional connectivity, Gramian with size ~ Nseeds x Nvoxels
             %  @return Z_E_ is numeric with size ~ 1 x Nvoxels
             
+            import mlafc.AsymmetricAFC
             reg = mlafc.AFCRegistry.instance();  
             sl_fc_gsp_ref_mat = @reg.sl_fc_gsp_ref_mat;
             betaT_ = reg.betaT;
@@ -869,23 +656,17 @@ classdef JohnsAFC < mlafc.AFC
                 Z_G = ld.Z_G;
             end
             
-            ld1 = load(sl_fc_gsp_ref_mat(1), 'sl_fc_gsp_ref'); 
-            M = size(ld1.sl_fc_gsp_ref, 1); 
-            summand = zeros(reg.ref_count, size(ld1.sl_fc_gsp_ref, 2));
-            parfor r = 1:reg.ref_count
-                matfile = feval(sl_fc_gsp_ref_mat, r); %#ok<FVAL>
-                ld = load(matfile, 'sl_fc_gsp_ref');
-                for m = 1:M
-                    Delta = tanh(atanh(fc(m,:)) - atanh(ld.sl_fc_gsp_ref(m,:))); %#ok<PFBNS>
-                    summand(r,:) = summand(r,:) + exp(-betaT_*Delta); 
-                end
+            summand = zeros(size(this.sl_fc_mean_));
+            for r = 1:reg.ref_count
+                ld = load(sl_fc_gsp_ref_mat(r), 'sl_fc_gsp_ref');
+                energy = AsymmetricAFC.abs_Delta(fc, ld.sl_fc_gsp_ref);
+                summand = summand + exp(-betaT_*energy);
             end
-            summand 
                      
             % collect Z_E
-            L = reg.ref_count*M;
+            L = reg.ref_count;
             Z_E = summand .* Z_G / L;
-            save(reg.Z_E_mat, 'Z_E');
+            save(fullfile(this.patientdir, [this.patientid '_Z_E' reg.tag '.mat']), 'Z_E')
         end
         function this = explore_fc(this, varargin)
             %% EXPLORE_FC makes connectivity maps of all GSP subjects
@@ -992,7 +773,7 @@ classdef JohnsAFC < mlafc.AFC
             %  @param patientdir is a folder.
             %  @param patientid is char.
             %  @param Nframes is numeric.  If ~empty(Nframes), inferences uses only specified Nframes.
-            %  @returns instance of mlafc.JohnsAFC.
+            %  @returns instance of mlafc.AsymmetricAFC.
             %  @returns inputParser.Results.
             %  @returns softmax in this.product as ImagingContext2.
             
@@ -1024,7 +805,7 @@ classdef JohnsAFC < mlafc.AFC
                     'bold_frames');
             end
             bold_frames = this.applyMaskToBoldFrames(ld.bold_frames); 
-                          % N_t x N_vxls ~ 2307 x 65549 single | 2307 x 18611 single
+                          % N_t x N_vxls ~ 2307 x 18611 single
                           % N_t is variable across studies
             if ~isempty(ipr.Nframes)
                 bold_frames = bold_frames(1:ipr.Nframes, :);                
@@ -1034,7 +815,7 @@ classdef JohnsAFC < mlafc.AFC
             %% per patient, build connectivity map
             
             sv__ = this.sv; 
-            Nsv__ = length(sv__); % ~ 2441 | 18611
+            Nsv__ = length(sv__); % ~ 18611
             
             sl_fc = zeros(Nsv__, this.N_BOLD, class(bold_frames)); 
             acorrcoef = @this.acorrcoef;
@@ -1051,23 +832,25 @@ classdef JohnsAFC < mlafc.AFC
             %% project fiber bundles to base manifold
             
             this.sl_fc_last = sl_fc;
-            prob = exp(-this.registry.betaT*this.energy(sl_fc)); % 1 x this.N_BOLD
+            prob = exp(-this.registry.betaT*this.energy(sl_fc)); % this.N_BOLD x this.N_BOLD
 
             %% assemble softmax
             
-            map = prob ./ this.Z_energy(sl_fc); 
+            prob = prob ./ this.Z_energy(sl_fc); % this.N_BOLD x this.N_BOLD
+            map = this.pi(prob); % 1 x this.N_BOLD
             map = this.maskArrToFullArr(map); % 1 x 147456
             this.afc_map = map; % ease QA
             
             %% save            
-            save(fullfile(this.patientdir, [this.patientid '_sl_fc.mat']), 'sl_fc')
             p = this.product('map', map);
             p.nifti.save();
             
             %% save more
-            map1 = this.maskArrToFullArr(this.energy(sl_fc)); % 1 x 147456
-            p = this.product('fileprefix', [this.patientid '_energy'], 'map', map1);
+            map1 = this.pi(sl_fc); % 1 x this.N_BOLD
+            map1 = this.maskArrToFullArr(map1); % 1 x 147456
+            p = this.product('fileprefix', [this.patientid '_pi_sl_fc'], 'map', map1);
             p.nifti.save();  
+            save(fullfile(this.patientdir, [this.patientid '_sl_fc.mat']), 'sl_fc')
         end
         function ic = mapOfSpheres(this)
             reg = this.registry;
@@ -1128,7 +911,7 @@ classdef JohnsAFC < mlafc.AFC
             ipr = ip.Results;
             ipr.samples1 = mlfourd.ImagingContext2(ipr.samples1);
             ipr.samples2 = mlfourd.ImagingContext2(ipr.samples2);
-            mask = mlafc.JohnsAFC.imagingContext_glm_atlas_mask();
+            mask = mlafc.AsymmetricAFC.imagingContext_mask();
             
             % build indices1, xi
             samples1_img = ipr.samples1.fourdfp.img;
@@ -1137,12 +920,16 @@ classdef JohnsAFC < mlafc.AFC
             [sorted1_,indices1] = sort(samples1);
             indices1 = indices1(sorted1_ > 0);
             N1 = length(indices1);
-            fc_indices1_ = ones(1, N1);
-            for i1 = 1:N1
-                for ixi = 1:length(this.sv)
-                    roi_indices = unique(samples1(this.sv{ixi}));
-                    if any(roi_indices == i1)
-                        fc_indices1_(i1) = ixi;
+            if size(ipr.fc, 1) == size(ipr.fc, 2)                
+                fc_indices1_ = indices1';
+            else
+                fc_indices1_ = ones(1, N1);
+                for i1 = 1:N1
+                    for ixi = 1:length(this.sv)
+                        roi_indices = unique(samples1(this.sv{ixi}));
+                        if any(roi_indices == i1)
+                            fc_indices1_(i1) = ixi;
+                        end
                     end
                 end
             end
@@ -1174,10 +961,10 @@ classdef JohnsAFC < mlafc.AFC
             client_ = strrep(dbs(2).name, '.', '_');
             try
                 savefig(ipr.handle, ...
-                    fullfile(this.patientdir, sprintf('%s_%s%s.fig', this.patientid, client_, this.tag)));
+                    fullfile(this.patientdir, sprintf('%s_%s%s.fig', this.patientid, client_, this.registry.tag)));
                 figs = get(0, 'children');
                 saveas(figs(1), ...
-                    fullfile(this.patientdir, sprintf('%s_%s%s.png', this.patientid, client_, this.tag)));
+                    fullfile(this.patientdir, sprintf('%s_%s%s.png', this.patientid, client_, this.registry.tag)));
             catch ME
                 handwarning(ME)
             end
@@ -1210,7 +997,7 @@ classdef JohnsAFC < mlafc.AFC
             dbs = dbstack;
             client_ = strrep(dbs(2).name, '.', '_');
             fileprefix = ...
-                fullfile(this.patientdir, sprintf('%s_%s%s', this.patientid, client_, this.tag));
+                fullfile(this.patientdir, sprintf('%s_%s%s', this.patientid, client_, this.registry.tag));
             print(fh,fileprefix,'-dpng',sprintf('-r%d',ipr.res));
         end
         function fc1 = visualize_Deltaz_sl_fc(this)
@@ -1224,10 +1011,8 @@ classdef JohnsAFC < mlafc.AFC
         function fc1 = visualize_sl_fc(this, varargin)
             ip = inputParser;
             addOptional(ip, 'sl_fc', this.sl_fc_last, @isnumeric)
-            addParameter(ip, 'tag', '_fc1', @ischar)
             parse(ip, varargin{:})
             ipr = ip.Results;
-            this.tag = ipr.tag;
             
             bb300 = mlpetersen.BigBrain300('711-2B');
             s300 = bb300.imagingContextSampling(301);
@@ -1235,7 +1020,7 @@ classdef JohnsAFC < mlafc.AFC
             fc1 = this.resampleFunctionalConnectivity(ipr.sl_fc, s300, s300);
             
             % expensive to build, so save  
-            save(sprintf('%s_visualize_sl_fc%s.mat', this.patientid, this.tag), 'fc1')
+            save(sprintf('%s_visualize_sl_fc%s.mat', this.patientid, this.registry.tag), 'fc1')
             
             %surf(fc1)
             %hold on
@@ -1256,10 +1041,8 @@ classdef JohnsAFC < mlafc.AFC
         function pi_energy = visualize_pi_energy(this, varargin)
             ip = inputParser;
             addRequired(ip, 'fc1', @isnumeric)
-            addParameter(ip, 'tag', '', @ischar)
             parse(ip, varargin{:})
             ipr = ip.Results;
-            this.tag = ipr.tag;
             
             h = figure;
             set(gca, 'FontSize', 32)
@@ -1281,8 +1064,8 @@ classdef JohnsAFC < mlafc.AFC
             this.savefig(h);
         end
         
- 		function this = JohnsAFC(varargin)
- 			%% JOHNSAFC
+ 		function this = AsymmetricAFC(varargin)
+ 			%% AsymmetricAFC
             %  @GMonly restricts to Carl's GM mask.
             %  @betaT is inverse temperature, default := 1.
 
@@ -1293,14 +1076,15 @@ classdef JohnsAFC < mlafc.AFC
             addParameter(ip, 'patientdir', pwd, @isfolder)
             addParameter(ip, 'similarityTag', '', @ischar)
             addParameter(ip, 'GMonly', true, @islogical)
-            addParameter(ip, 'betaT', 1, @isscalar)
+            addParameter(ip, 'betaT', 0.5, @isscalar)
+            addParameter(ip, 'tag', '_betaT0p5', @ischar)
             parse(ip, varargin{:})
             ipr = ip.Results;
             
             this.registry_.min_num_vox = 1;
             this.registry_.tanh_sandwich = true;
             this.registry_.similarityTag = ipr.similarityTag;
-            this.registry_.tag = '_GMonly';
+            this.registry_.tag = ipr.tag;
             this.registry_.GMonly = ipr.GMonly;
             this.registry.betaT = ipr.betaT;
             this.patientid_ = ipr.patientid;
@@ -1314,6 +1098,10 @@ classdef JohnsAFC < mlafc.AFC
     end 
     
     %% PROTECTED
+    
+    properties (Access = protected)        
+        sv_ % 1 x 2825  cells with variable size [(x > 1) 1]
+    end
     
     methods (Access = protected)
         function xfm = build_GMToYeo7_xfm_(this)
@@ -1360,7 +1148,7 @@ classdef JohnsAFC < mlafc.AFC
             
             %% Store sphere voxels indices
             
-            mask_ = mlafc.JohnsAFC.readMaskArr();
+            mask_ = mlafc.AsymmetricAFC.readMaskArr();
             mask_(find(mask_)) = 1; %#ok<FNDSB>
             found_mask_ = find(mask_);            
             this.sv_ = {};
@@ -1416,7 +1204,7 @@ classdef JohnsAFC < mlafc.AFC
             %  @param required i in {'smn' 'dmn' 'vis' 'fpc' 'lan' 'van' 'dan' }
             
             if ~verLessThan('matlab', '8.5')
-                error('mlafc:VersionError', 'JohnsAFC.brainNet_xi_x requires Matlab R2014')
+                error('mlafc:VersionError', 'AsymmetricAFC.brainNet_xi_x requires Matlab R2014')
             end
             assert(ischar(coord))
             assert(isscalar(i))
@@ -1456,12 +1244,12 @@ classdef JohnsAFC < mlafc.AFC
             end
 
             for r = 1:length(rsns)
-                ic = mlafc.JohnsAFC.buildBaseManifold(rsns{r}, x{r} + 1);
+                ic = mlafc.AsymmetricAFC.buildBaseManifold(rsns{r}, x{r} + 1);
                 %ic.fsleyes
                 ic.save
                 fpout = strsplit(ic.fileprefix, '_x_');
                 fpout = [fpout{1} '_on_MNI152'];
-                mlafc.JohnsAFC.flirt_to_MNI152(ic.filename, 'fpout', fpout); %, 'interp', 'nearestneighbour');
+                mlafc.AsymmetricAFC.flirt_to_MNI152(ic.filename, 'fpout', fpout); %, 'interp', 'nearestneighbour');
             end
         end
         function ic = buildBaseManifold(varargin)
@@ -1483,10 +1271,10 @@ classdef JohnsAFC < mlafc.AFC
             
             ld = load(sprintf('sv_radius%i_stride%i.mat', ipr.radius, ipr.stride), 'sv');
             sv = ld.sv;
-            ld = load(sprintf('sl_fc_mean_radius%i_stride%i_N%i_JohnsAFC.mat', ipr.radius, ipr.stride, ipr.ref_count), 'sl_fc_mean');
+            ld = load(sprintf('sl_fc_mean_radius%i_stride%i_N%i_AsymmetricAFC.mat', ipr.radius, ipr.stride, ipr.ref_count), 'sl_fc_mean');
             sl_fc_mean = ld.sl_fc_mean;
 
-            x1 = mlafc.JohnsAFC.x333_to_xMaskArr(ipr.x);
+            x1 = mlafc.AsymmetricAFC.x333_to_xMaskArr(ipr.x);
             sl_fc_xi = sl_fc_mean(:, x1)'; % as row
             garr = zeros(1, 65549);
             for isv = 1:length(sv)
@@ -1498,7 +1286,7 @@ classdef JohnsAFC < mlafc.AFC
             x = ipr.x(1);
             y = ipr.x(2);
             z = ipr.x(3);
-            ic = mlafc.JohnsAFC.glmmskArrToIC( ...
+            ic = mlafc.AsymmetricAFC.glmmskArrToIC( ...
                 garr, 'fileprefix', sprintf('basemanifold_%s_x_%i_%i_%i', ipr.rsn, x, y, z));
         end
         function buildBaseManifolds_legacy()
@@ -1513,10 +1301,10 @@ classdef JohnsAFC < mlafc.AFC
                     % xi ~ 2091 (FPC), x on MNI ~ []
 
             for p = 1:length(xpos)
-                ic = mlafc.JohnsAFC.buildBaseManifold_x(xpos{p} + 1);
+                ic = mlafc.AsymmetricAFC.buildBaseManifold_x(xpos{p} + 1);
                 %ic.fsleyes
                 ic.save
-                mlafc.JohnsAFC.flirt_to_MNI152(ic.filename); %, 'interp', 'nearestneighbour');
+                mlafc.AsymmetricAFC.flirt_to_MNI152(ic.filename); %, 'interp', 'nearestneighbour');
             end
         end
         function ic = buildBaseManifold_x_legacy(varargin)
@@ -1537,10 +1325,10 @@ classdef JohnsAFC < mlafc.AFC
             
             ld = load(sprintf('sv_radius%i_stride%i.mat', ipr.radius, ipr.stride), 'sv');
             sv = ld.sv;
-            ld = load(sprintf('sl_fc_mean_radius%i_stride%i_N%i_JohnsAFC.mat', ipr.radius, ipr.stride, ipr.ref_count), 'sl_fc_mean');
+            ld = load(sprintf('sl_fc_mean_radius%i_stride%i_N%i_AsymmetricAFC.mat', ipr.radius, ipr.stride, ipr.ref_count), 'sl_fc_mean');
             sl_fc_mean = ld.sl_fc_mean;
 
-            x1 = mlafc.JohnsAFC.x333_to_xMaskArr(ipr.x);
+            x1 = mlafc.AsymmetricAFC.x333_to_xMaskArr(ipr.x);
             sl_fc_xi = sl_fc_mean(:, x1)'; % as row
             garr = zeros(1, 65549);
             for isv = 1:length(sv)
@@ -1552,11 +1340,11 @@ classdef JohnsAFC < mlafc.AFC
             x = ipr.x(1);
             y = ipr.x(2);
             z = ipr.x(3);
-            ic = mlafc.JohnsAFC.glmmskArrToIC( ...
+            ic = mlafc.AsymmetricAFC.glmmskArrToIC( ...
                 garr, 'fileprefix', sprintf('baseManifold_x_%i_%i_%i', x, y, z));
         end
         function buildFiberBundles_legacy()
-            sl_fc_mean = mlfourd.ImagingContext2('sl_fc_mean_radius2_stride3_N500_JohnsAFC.nii.gz');
+            sl_fc_mean = mlfourd.ImagingContext2('sl_fc_mean_radius2_stride3_N500_AsymmetricAFC.nii.gz');
             fb = copy(sl_fc_mean.nifti);
 
             fb1229 = copy(fb); fb1229.img = fb.img(:,:,:,1229); fb1229.fileprefix = 'fiberbundle1229'; fb1229.save
@@ -1583,7 +1371,7 @@ classdef JohnsAFC < mlafc.AFC
             parse(ip, varargin{:})
             ipr = ip.Results;            
             
-            arr = mlafc.JohnsAFC.maskArrToFullArr(ipr.arr);
+            arr = mlafc.AsymmetricAFC.maskArrToFullArr(ipr.arr);
             arr = arr';            
             img = reshape(arr, [48 64 48]);
             img(isnan(img)) = 0;
@@ -1635,7 +1423,7 @@ classdef JohnsAFC < mlafc.AFC
             %  @param patientdir is a folder.
             %  @param patientid is char.
             %  @param Nframes is numeric.  If ~empty(Nframes), inferences uses only specified Nframes.
-            %  @returns instance of mlafc.JohnsAFC.
+            %  @returns instance of mlafc.AsymmetricAFC.
             %  @returns inputParser.Results.
             %  @returns softmax in this.product as ImagingContext2.
             
