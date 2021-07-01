@@ -309,6 +309,116 @@ classdef SymmetricAFC < mlafc.AFC
             
             save(reg.Z_G_mat, 'Z_G');
         end
+        function v = calc_violinplot(varargin)
+            %  @param transform is a function handle, e.g., @probToKLSample.
+            %  e.g.:
+            %  mlafc.AFC.calc_violinplot('PT*', 'ylabel', '$-\log(p/p_0)$', 'interpreter', 'latex', 'transform', @mlafc.AFC.probToKLSample)
+            
+            ip = inputParser;
+            addOptional(ip, 'toglob', 'PT*', @ischar)
+            addParameter(ip, 'filestring', '', @ischar)
+            addParameter(ip, 'outTag', '_softmax', @ischar)
+            addParameter(ip, 'ylim', [], @isnumeric)
+            addParameter(ip, 'ylabel', '$-\log(P(x)/P_0)$')
+            addParameter(ip, 'interpreter', 'latex', @ischar)
+            addParameter(ip, 'transform', @mlafc.AFC.probToKLSample)
+            parse(ip, varargin{:})
+            ipr = ip.Results;
+            globbed = globFoldersT(ipr.toglob);
+            reg = mlafc.AFCRegistry.instance();
+            
+            %mask = mlfourd.ImagingContext2(fullfile(getenv('REFDIR'), 'gm3d.nii.gz'));
+            %mask = mask.binarized();
+            mask = mlafc.AFC.imagingContext_mask();
+            mask = mask.binarized();
+            Nvxl = dipsum(mask);
+            Npts = length(globbed);
+            data = zeros(Nvxl, Npts, 'single');
+            
+            if strcmp(computer, 'MACI64')
+                home = '/Users/jjlee/Box/Leuthardt_Epilepsy_Project/Segmentations_06_and_07_2020';
+            else
+                home = '/data/nil-bluearc/shimony/jjlee/FocalEpilepsy';
+            end
+            for ig = 1:Npts
+                try
+                    cd(fullfile(home, globbed{ig}));
+                    if isempty(ipr.filestring)
+                        afc_prob = mlfourd.ImagingContext2(sprintf('%s_softmax%s%s.nii.gz', ...
+                            globbed{ig}, reg.fileTag, reg.productTag)); 
+                    else
+                        afc_prob = mlfourd.ImagingContext2(sprintf('%s_%s.nii.gz', ...
+                            globbed{ig}, ipr.filestring));
+                    end
+                    img = afc_prob.nifti.img;
+                    fprintf('gm sum -> %g\n', dipsum(img))
+                    data(:,ig) = reshape(img(logical(mask)), [Nvxl 1]); 
+                    if ~isempty(ipr.transform)
+                        data(:,ig) = ipr.transform(data(:, ig));
+                    end
+                catch ME
+                    handwarning(ME)
+                end
+            end
+            cd(home)
+
+            h = figure;
+            if contains(ipr.toglob, 'PT')          
+                %labels = {'PT15 (Ia)' 'PT26 (IV)' 'PT28 (Ia)' 'PT29 (IV)' 'PT34 (IIa)' 'PT35 (IV)' 'PT36 (Ia)'};  
+                labels = {'1 (Ia)' '5 (IV)' '2 (Ia)' '6 (IV)' '4 (IIa)' '7 (IV)' '3 (Ia)'};  
+                ordering = [1 3 7 5 2 4 6]; % pt28, pt15, pt36, pt34, pt26, pt29, p35
+                labels = labels(ordering);
+                data(:,:) = data(:,ordering);
+            else                
+                labels = cellfun(@(x) strrep(x, '_Ses1', ''), globbed, 'UniformOutput', false);
+            end
+            
+            v = violinplot(data, labels, ...
+                'ShowData', true, 'ShowNotches', false, 'ViolinAlpha', 0.03, ...
+                'BoxColor', [.1 .1 .1], 'EdgeColor', [0.8 0.8 0.8], 'Bandwidth', 0.005);
+            jet = colormap('jet');
+            dv = 255/(length(v) - 1);
+            for iv = 1:length(v)
+                v(iv).BoxWidth = 0.02;
+                idxjet = floor((iv-1)*dv) + 1;
+                v(iv).ViolinColor = jet(idxjet,:);
+            end
+            if ~isempty(ipr.ylim)
+                ylim(ipr.ylim)
+            end
+            ax = gca;
+            ax.YRuler.Exponent = 0;
+            %ytickformat('%.3f')
+
+            if contains(globbed{1}, 'PT')
+                cohort = 'pts';
+                set(gca, 'fontsize', 26)
+                ylabel(ipr.ylabel, 'Interpreter', ipr.interpreter, 'FontSize', 42)
+                xlabel('patient ID (Engel class)', 'FontSize', 38)
+            elseif contains(globbed{1}, 'Sub')
+                cohort = 'subs';
+                set(gca, 'fontsize', 26)
+                xtickangle(90)
+                ylabel(ipr.ylabel, 'Interpreter', ipr.interpreter, 'FontSize', 42)
+                xlabel('subject ID', 'FontSize', 38)
+            else
+                cohort = 'entities';
+                set(gca, 'fontsize', 14)
+                ylabel(ipr.ylabel, 'Interpreter', ipr.interpreter, 'FontSize', 18)
+                xlabel('entity ID', 'FontSize', 18)
+            end
+            savefig(h, ...
+                sprintf('calc_violinplot%s%s_%i%s.fig', reg.fileTag, reg.productTag, Npts, cohort))
+            figs = get(0, 'children');
+            saveas(figs(1), ...
+                sprintf('calc_violinplot%s%s_%i%s.png', reg.fileTag, reg.productTag, Npts, cohort))
+%                close(figs(1))
+        end 
+        function c = client(n)
+            assert(isscalar(n))
+            dbs = dbstack;
+            c = strrep(dbs(n+1).name, '.', '_');
+        end
         function garr = fullArrToMaskArr(farr)
             %% FULLARRTOMASKARR
             %  @param required farr is Nt x (48*64*48).
@@ -485,6 +595,7 @@ classdef SymmetricAFC < mlafc.AFC
             ip = inputParser;
             addRequired(ip, 'pid', @(x) contains(x, 'PT'))
             addOptional(ip, 'Z_G', [], @isnumeric)
+            addParameter(ip, 'KLSample', false, @islogical)
             parse(ip, varargin{:})
             ipr = ip.Results;
             if isempty(ipr.Z_G)
@@ -496,17 +607,20 @@ classdef SymmetricAFC < mlafc.AFC
             pwd0 = pushd(fullfile(reg.workpath, ipr.pid));
             
             ld = load([ipr.pid '_sl_fc.mat'], 'sl_fc');
-            jafc = mlafc.SymmetricAFC(); 
-            jafc.visualize_sl_fc(jafc.abs_Delta(ld.sl_fc, jafc.sl_fc_mean_), ...
-                'fileprefix', 'Gramian_abs_Delta_sl_fc_z', 'caxis', [0 0.5]);
-%            prob = exp(-jafc.energy(ld.sl_fc)) ./ ipr.Z_G;
-%            prob = jafc.probToKLSample(prob);
-%            jafc.visualize_sl_fc(prob, ...
-%                'fileprefix', 'Gramian_prob', 'z', false, 'flip_colormap', false, 'caxis', [-.15 .2]); % [1.8e-3 2.3e-3]);
+            jafc = mlafc.SymmetricAFC();
+            if ipr.KLSample
+                prob = exp(-jafc.energy(ld.sl_fc)) ./ ipr.Z_G;
+                prob = jafc.probToKLSample(prob);
+                jafc.visualize_sl_fc(prob, ...
+                    'fileprefix', 'Gramian_KLSample', 'z', false, 'flip_colormap', false, 'caxis', [-.15 .2]); % [1.8e-3 2.3e-3]);
+            else
+                jafc.visualize_sl_fc(jafc.abs_Delta(ld.sl_fc, jafc.sl_fc_mean_), ...
+                    'fileprefix', 'Gramian_abs_Delta_sl_fc_z', 'caxis', [0 0.5]);
+            end
             
             popd(pwd0)
         end
-        function visualizeAfcProb(varargin)
+        function visualizeKLSampleFsleyes(varargin)
             ip = inputParser;
             addOptional(ip, 'toglob', 'PT*', @ischar)
             addParameter(ip, 'outTag', '_softmax', @ischar)
@@ -549,7 +663,7 @@ classdef SymmetricAFC < mlafc.AFC
                 qc.fsleyes(resection{1}, edge_seg.filename, bb300)
             end
         end
-        function visualizeRSNROIInSegmentation()            
+        function visualizeRSNROIInSegmentation()
             import mlfourd.ImagingContext2
             reg = mlafc.AFCRegistry.instance();
             bb = ImagingContext2(fullfile(getenv('REFDIR'), 'BigBrain300', 'BigBrain300_711-2b_allROIs_111.nii.gz'));
@@ -622,6 +736,9 @@ classdef SymmetricAFC < mlafc.AFC
                 xfm_ = this.build_GMToYeo7_xfm_();
             end
             g = xfm_;
+        end
+        function g = get.Nframes(this)
+            g = this.Nframes_;
         end
         function g = get.N_BOLD(this)
             g = this.registry.N_BOLD;
@@ -783,6 +900,17 @@ classdef SymmetricAFC < mlafc.AFC
             save(reg.sl_fc_std_mat, 'sl_fc_std')
             clear('sl_fc_std')
         end  
+        function fp = fileprefix(this, varargin)
+            % @param n 
+            ip = inputParser;
+            addParameter(ip, 'n', @isscalar)
+            parse(ip, varargin{:})
+            ipr = ip.Results;
+            fp = sprintf('%s_%s%s', this.patientid, this.client(ipr.n), this.registry.tag);
+        end
+        function fqfp = fqfileprefix(this, varargin)
+            fqfp = fullfile(this.patientdir,this.fileprefix(varargin{:}));
+        end
         function [this,ipr] = makeSoftmax(this, varargin)
             %% MAKESOFTMAX of dissimilarity requires completion of explore_fc() which stores 
             %  this.sl_fc_gsp_, this.sl_fc_mean_.
@@ -807,18 +935,19 @@ classdef SymmetricAFC < mlafc.AFC
             
             %% per patients, use results of mlperceptron.PerceptronRelease factory
             
-            mlperceptron.PerceptronFromFormat.createProbMaps(this.patientdir, this.patientid)
+            mlperceptron.PerceptronFromFormat.createProbMaps( ...
+                this.patientdir, this.patientid, 'frameCensoring', false)
             try
                 ld = load( ...
                     fullfile(this.patientdir, 'Perceptron', ...
                     sprintf('%s%s', this.patientid, this.registry.perceptron_resid_mat)), ...
                     'bold_frames');
             catch ME
-                handwarning(ME)
-                ld = load( ...
-                    fullfile(this.patientdir, 'Perceptron', ...
-                    sprintf('%s%s', this.patientid, this.registry.perceptron_uout_resid_mat)), ...
-                    'bold_frames');
+                handerror(ME)
+                %ld = load( ...
+                %    fullfile(this.patientdir, 'Perceptron', ...
+                %    sprintf('%s%s', this.patientid, this.registry.perceptron_uout_resid_mat)), ...
+                %    'bold_frames');
             end
             bold_frames = this.applyMaskToBoldFrames(ld.bold_frames); 
                           % N_t x N_vxls ~ 2307 x 18611 single
@@ -856,9 +985,9 @@ classdef SymmetricAFC < mlafc.AFC
             p = this.product('fileprefix', [this.patientid '_pi_sl_fc'], 'map', map1);
             p.nifti.save();  
             sl_fc_file = fullfile(this.patientdir, [this.patientid '_sl_fc.mat']);
-            if ~isfile(sl_fc_file)
-                save(sl_fc_file, 'sl_fc')
-            end
+            %if ~isfile(sl_fc_file)
+            save(sl_fc_file, 'sl_fc')
+            %end
         end
         function p = product(this, varargin)
             ip = inputParser;
@@ -961,6 +1090,44 @@ classdef SymmetricAFC < mlafc.AFC
                     rows = find(samples1 == uhits(i));
                     cols = find(samples1 == uhits(j));
                     fc1(i,j) = tanh(mean(mean(atanh(ipr.fc(rows,cols)), 'omitnan'), 'omitnan'));
+                end
+            end
+            
+            fc1 = this.reshape201(fc1);
+        end
+        function fc1 = resampleFunctionalConnectivityReals(this, varargin)
+            %% resamples fc using samples{1,2} derived from mlpetersen.BigBrain300.imagingContext, typically
+            %  the output of mlpetersen.BigBrain300.imagingContextSampling.  The contents of samples1 determine
+            %  the ordering by which fc1 has its indices sorted.  
+            %  @param required fc is numeric for Nvoxels x Nvoxels, in Carl Hacker's format.
+            %  @param required samples1 is understood by ImagingContext2 and describes samples for x.
+            %  @returns fc1, which is smaller than fc, and which has indices sorted according to the
+            %           contents of samples1.
+            
+            ip = inputParser;
+            addRequired(ip, 'fc', @isnumeric)
+            addRequired(ip, 'samples1', @(x) ~isempty(x))
+            parse(ip, varargin{:})
+            ipr = ip.Results;
+            ipr.samples1 = mlfourd.ImagingContext2(ipr.samples1);
+            ipr.samples1 = flip(ipr.samples1, 1);
+            ipr.samples1 = flip(ipr.samples1, 2); % nifti
+            mask = mlafc.SymmetricAFC.imagingContext_mask();
+            mask = flip(mask, 1); % 4dfp
+            
+            % build indices1, x
+            samples1 = ipr.samples1.nifti.img(logical(mask)); % 1 x Nmask, containing [0:300]
+            
+            % build fc1
+            ld = load(fullfile(this.registry.workpath, 'uhits.mat'), 'uhits');
+            uhits = ld.uhits';
+            Nhits = length(uhits);
+            fc1 = zeros(Nhits, Nhits);
+            for j = 1:Nhits
+                for i = 1:Nhits
+                    rows = find(samples1 == uhits(i));
+                    cols = find(samples1 == uhits(j));
+                    fc1(i,j) = mean(mean(ipr.fc(rows,cols), 'omitnan'), 'omitnan');
                 end
             end
             
@@ -1082,13 +1249,13 @@ classdef SymmetricAFC < mlafc.AFC
                 fullfile(this.patientdir, sprintf('%s_%s%s', this.patientid, client_, this.registry.tag));
             print(fh,fileprefix,'-dpng',sprintf('-r%d',ipr.res));
         end
-        function fc1 = visualize_Deltaz_sl_fc(this)
+        function fc1 = visualize_Deltaz_sl_fc(this, varargin)
             globbed = globT('*_sl_fc.mat');
             assert(~isempty(globbed))
             assert(~isempty(this.sl_fc_mean_))
             ld = load(globbed{1}, 'sl_fc');
-            Deltaz = tanh(this.atanh(ld.sl_fc) - this.atanh(this.sl_fc_mean_));
-            fc1 = this.visualize_sl_fc(Deltaz, 'tag', '_Deltaz_fc1');
+            Deltaz = tanh(this.atanh(ld.sl_fc) - this.atanh(this.sl_fc_mean_));            
+            fc1 = this.visualize_sl_fc(Deltaz, varargin{:});
         end
         function fc1 = visualize_sl_fc(this, varargin)
             %% visualizes Gramian for Carl's gray-matter mask.
@@ -1120,6 +1287,7 @@ classdef SymmetricAFC < mlafc.AFC
             addParameter(ip, 'caxis', [], @isnumeric)
             addParameter(ip, 'colormap', 'jet', @ischar)
             addParameter(ip, 'flip_colormap', false, @islogical)
+            addParameter(ip, 'save', true, @islogical)
             parse(ip, varargin{:})
             ipr = ip.Results;
             
@@ -1129,7 +1297,9 @@ classdef SymmetricAFC < mlafc.AFC
             fc1 = this.resampleFunctionalConnectivityAll(ipr.sl_fc, sall);
             
             % expensive to build, so save  
-            save(sprintf('%s_visualize_sl_fc%s.mat', this.patientid, this.registry.tag), 'fc1')
+            if ipr.save
+                save(sprintf('%s_visualize_sl_fc%s%s.mat', this.patientid, this.registry.tag), 'fc1')
+            end
             
             %surf(fc1)
             %hold on
@@ -1161,11 +1331,88 @@ classdef SymmetricAFC < mlafc.AFC
             %xlabel('voxels $\mathbf{x}$', 'Interpreter', 'latex', 'FontSize', 50)
             %ylabel('voxels $\mathbf{x}$', 'Interpreter', 'latex', 'FontSize', 50)  
             %this.savefig_highres(h);
-            this.savefig(h, 'fileprefix', ipr.fileprefix);
+            if ipr.save
+                this.savefig(h, 'fileprefix', ipr.fileprefix);
+            end
+        end
+        function fc1 = visualize_free_energy(this, varargin)
+            %% visualizes Gramian for Carl's gray-matter mask.
+            %
+            % uhit coord	RSN (15)          ortho   ortho
+            % 
+            % 6:27		    smd                         1:22 
+            % 28:31		    smi                        23:26
+            % 32:50		    con                        27:45
+            % 51:61		    aud                        46:56
+            % 62:101		dmn                        57:96
+            % 102:104		pmn                        97:99
+            % 105:124		vis                       100:119
+            % 125:139		fpn                       120:134
+            % 140:147		sal                       135:142
+            % 148:152		van                       143:147
+            % 180:196		dan *             153:169 148:164
+            % 153:167		bga               170:184 165:179
+            % 168:179		tha               185:196 180:191
+            % 197:198		amygdala    } MTL 197:201 192:196
+            % 199:201		hippocampus }
+            % 1:5			reward *                  197:201
+            % * indicates relocation
+
+            ip = inputParser;
+            addOptional(ip, 'free_energy', [], @isnumeric)
+            addParameter(ip, 'fileprefix', '', @ischar)
+            addParameter(ip, 'caxis', [], @isnumeric)
+            addParameter(ip, 'colormap', 'jet', @ischar)
+            addParameter(ip, 'flip_colormap', false, @islogical)
+            addParameter(ip, 'save', true, @islogical)
+            parse(ip, varargin{:})
+            ipr = ip.Results;
+            
+            bb300 = mlpetersen.BigBrain300('711-2B');
+            %s300 = bb300.imagingContextSampling(301);
+            sall = bb300.imagingContextSampling(20*300);
+            fc1 = this.resampleFunctionalConnectivityReals(ipr.free_energy, sall);
+            
+            % expensive to build, so save  
+            if ipr.save
+                save(sprintf('%s_visualize_free_energy%s.mat', this.patientid, this.registry.tag), 'fc1')
+            end
+            
+            %surf(fc1)
+            %hold on
+            h = figure;
+            imagesc(fc1)
+            set(gca, 'FontSize', 32)
+            if isempty(ipr.colormap) || strcmpi(ipr.colormap, 'fccolormap')
+                ld = load(fullfile(this.registry.workpath, 'FCColormap.mat'), 'FCColormap');
+                colormap(gca, ld.FCColormap)
+            else
+                colormap(ipr.colormap)
+            end
+            if ipr.flip_colormap
+                colormap(h, flipud(colormap(h)))
+            end
+            if ~isempty(ipr.caxis) 
+                caxis(ipr.caxis)
+            end
+            colorbar
+            %hold off
+            h1 = gca; 
+            h1.XAxis.TickLength = [0 0];
+            h1.YAxis.TickLength = [0 0];
+            set(gca, 'XTickLabel', [])
+            set(gca, 'YTickLabel', [])
+            %xlabel('voxels $\mathbf{x}$', 'Interpreter', 'latex', 'FontSize', 50)
+            %ylabel('voxels $\mathbf{x}$', 'Interpreter', 'latex', 'FontSize', 50)  
+            %this.savefig_highres(h);
+            if ipr.save
+                this.savefig(h, 'fileprefix', ipr.fileprefix);
+            end
         end
         function pi_energy = visualize_pi_energy(this, varargin)
             ip = inputParser;
             addRequired(ip, 'fc1', @isnumeric)
+            addParameter(ip, 'save', true, @islogical)
             parse(ip, varargin{:})
             ipr = ip.Results;
             
@@ -1186,7 +1433,9 @@ classdef SymmetricAFC < mlafc.AFC
 
             drawnow
             set(p.Edge, 'ColorBinding', 'interpolated', 'ColorData', cdat1)
-            this.savefig(h);
+            if ipr.save
+                this.savefig(h);
+            end
         end
         
  		function this = SymmetricAFC(varargin)
@@ -1202,7 +1451,7 @@ classdef SymmetricAFC < mlafc.AFC
             addParameter(ip, 'similarityTag', '', @ischar)
             addParameter(ip, 'GMonly', true, @islogical)
             addParameter(ip, 'betaT', 1, @isscalar)
-            addParameter(ip, 'tag', '_betaT1', @ischar)
+            addParameter(ip, 'tag', '_GMonly', @ischar)
             addParameter(ip, 'productTag', '_betaT1', @ischar)
             addParameter(ip, 'Nframes', [], @isnumeric)
             parse(ip, varargin{:})
@@ -1217,7 +1466,7 @@ classdef SymmetricAFC < mlafc.AFC
             this.registry.betaT = ipr.betaT;
             this.patientid_ = ipr.patientid;
             this.patientdir = ipr.patientdir;
-            this.N
+            this.Nframes_ = ipr.Nframes;
             
             if isempty(this.sl_fc_mean_)
                 this = load(this);

@@ -13,7 +13,7 @@ classdef AFCRegistry < handle
         GMonly = true
         grid_spacing = 1
         min_num_vox = 1
-        productTag = ''
+        productTag = '_betaT1'
         ref_count = 500
         similarityTag = ''
         sphere_radius = 1
