@@ -194,10 +194,13 @@ classdef Test_AFC < matlab.unittest.TestCase
                 end
             end            
         end
-        function test_visualize_sl_fc(this)
+        function test_visualizePT(this)
             setenv('WORK', this.WORK)
             cd(this.WORK)
+            ld = load('Z_G_radius1_stride1_N500_GMonly.mat', 'Z_G');
+            Z_G = ld.Z_G;
             pts = globFoldersT('PT*');
+            outmap = containers.Map('KeyType', 'char', 'ValueType', 'any');
             for ip = 1:length(pts)
                 if strcmp(pts{ip}, 'PTmore')
                     continue
@@ -205,17 +208,13 @@ classdef Test_AFC < matlab.unittest.TestCase
                 try
                     pdir = fullfile(getenv('WORK'), pts{ip}, '');
                     pwd0 = pushd(pdir);
-                    jafc = mlafc.SymmetricAFC( ...
-                        'sphere_radius', 2, ...
-                        'grid_spacing', 3, ...
-                        'ref_count', 500);
-                    jafc = jafc.makeSoftmax(pwd, pts{ip});
-                    jafc.visualize_sl_fc();
+                    outmap(pts{ip}) = mlafc.SymmetricAFC.visualizePT(pts{ip}, Z_G, 'KLSample', true, 'save', false);
                     popd(pwd0)
                 catch ME
                     handwarning(ME)
                 end
             end 
+            this.report_out(outmap)
         end
         function test_fullArrToMaskArr(this)
             atl = mlfourd.ImagingFormatContext('711-2B_333.nii.gz');
@@ -473,7 +472,32 @@ classdef Test_AFC < matlab.unittest.TestCase
 
 	methods (Access = private)
 		function cleanTestMethod(this)
- 		end
+        end
+        function report_out(~, varargin)
+            ip = inputParser;
+            addRequired(ip, 'outmap', @(x) isa(x, 'containers.Map'))
+            parse(ip, varargin{:})
+            ipr = ip.Results;
+
+            m = [];
+            x = [];
+            for pid = {'PT15' 'PT28' 'PT36'}
+                m = [m; ipr.outmap(pid{1}).mean];                    
+                x = [x; ipr.outmap(pid{1}).max];
+            end
+            fprintf('Engel Ia mean: %g\n', mean(m));
+            fprintf('Engel Ia max:  %g\n', max(x));
+
+            fprintf('Engel IIa mean: %g\n', ipr.outmap('PT34').mean);
+            fprintf('Engel IIa max:  %g\n', ipr.outmap('PT34').max);                
+
+            for pid = {'PT26' 'PT29' 'PT35'}
+                m = [m; ipr.outmap(pid{1}).mean];                    
+                x = [x; ipr.outmap(pid{1}).max];
+            end
+            fprintf('Engel IV mean: %g\n', mean(m));
+            fprintf('Engel IV max:  %g\n', max(x));            
+        end
 	end
 
 	%  Created with Newcl by John J. Lee after newfcn by Frank Gonzalez-Morphy

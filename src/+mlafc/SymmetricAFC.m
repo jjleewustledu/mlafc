@@ -10,6 +10,7 @@ classdef SymmetricAFC < mlafc.AFC
         BigBrain300
  		GMctx % ImagingContext2
         GMToYeo7_xfm
+        EngelClass
         N_BOLD
         Nframes
         Yeo7
@@ -591,11 +592,12 @@ classdef SymmetricAFC < mlafc.AFC
             ifc.fileprefix = myfileprefix(matname);
             ic = mlfourd.ImagingContext2(ifc);
         end
-        function visualizePT(varargin)
+        function out = visualizePT(varargin)
             ip = inputParser;
             addRequired(ip, 'pid', @(x) contains(x, 'PT'))
             addOptional(ip, 'Z_G', [], @isnumeric)
             addParameter(ip, 'KLSample', false, @islogical)
+            addParameter(ip, 'save', true)
             parse(ip, varargin{:})
             ipr = ip.Results;
             if isempty(ipr.Z_G)
@@ -611,12 +613,17 @@ classdef SymmetricAFC < mlafc.AFC
             if ipr.KLSample
                 prob = exp(-jafc.energy(ld.sl_fc)) ./ ipr.Z_G;
                 prob = jafc.probToKLSample(prob);
-                jafc.visualize_sl_fc(prob, ...
-                    'fileprefix', 'Gramian_KLSample', 'z', false, 'flip_colormap', false, 'caxis', [-.15 .2]); % [1.8e-3 2.3e-3]);
+                [~,fc0] = jafc.visualize_sl_fc(prob, ...
+                    'fileprefix', 'Gramian_KLSample', 'z', false, 'flip_colormap', false, 'caxis', [-.15 .2], ...
+                    'save', ipr.save); % [1.8e-3 2.3e-3]);
             else
-                jafc.visualize_sl_fc(jafc.abs_Delta(ld.sl_fc, jafc.sl_fc_mean_), ...
-                    'fileprefix', 'Gramian_abs_Delta_sl_fc_z', 'caxis', [0 0.5]);
-            end
+                [~,fc0] = jafc.visualize_sl_fc(jafc.abs_Delta(ld.sl_fc, jafc.sl_fc_mean_), ...
+                    'fileprefix', 'Gramian_abs_Delta_sl_fc_z', 'caxis', [0 0.5], ...
+                    'save', ipr.save);
+            end                
+            out.mean = jafc.fcmean(fc0);
+            out.max  = jafc.fcmax(fc0);
+            disp(out)
             
             popd(pwd0)
         end
@@ -725,6 +732,24 @@ classdef SymmetricAFC < mlafc.AFC
         function g = get.BigBrain300(~)
             g = mlfourd.ImagingContext2( ...
                 fullfile(getenv('REFDIR'), 'BigBrain300', 'BigBrain300_711-2b_allROIs.nii.gz'));
+        end
+        function g = get.EngelClass(this)
+            switch this.patientid
+                case 'PT15'
+                    g = 'Ia'
+                case 'PT26'
+                    g = 'IV';
+                case 'PT28'
+                    g = 'Ia';
+                case 'PT29'
+                    g = 'IV';
+                case 'PT34'
+                    g = 'IIa';
+                case 'PT35'
+                    g = 'IV';
+                case 'PT36'
+                    g = 'Ia';
+            end
         end
         function g = get.GMctx(~)
             g = mlfourd.ImagingContext2( ...
@@ -900,6 +925,64 @@ classdef SymmetricAFC < mlafc.AFC
             save(reg.sl_fc_std_mat, 'sl_fc_std')
             clear('sl_fc_std')
         end  
+        function fcm = fcmax(this, varargin)
+            ip = inputParser;
+            addRequired(ip, 'fc0', @isnumeric)
+            addOptional(ip, 'rsn', '', @ischar)
+            addOptional(ip, 'rsn2', '', @ischar)
+            parse(ip, varargin{:})
+            ipr = ip.Results;
+            leye = logical(eye(size(ipr.fc0)));
+            ipr.fc0(leye) = nan;
+            ipr.rsn = lower(ipr.rsn);            
+            
+            if isempty(ipr.rsn)
+                fcm = dipmax(ipr.fc0);
+                return
+            end
+            if isempty(ipr.rsn2)
+                ranges = this.rsnRangesChar();
+                ranges = ranges(ipr.rsn);
+                tmp = ipr.fc0(ranges, ranges);                
+                fcm = dipmax(tmp);
+                return
+            end
+            
+            ranges = this.rsnRangesChar();
+            ranges1 = ranges(ipr.rsn);
+            ranges2 = ranges(ipr.rsn2);
+            tmp = ipr.fc0(ranges1, ranges2);
+            fcm = dipmax(tmp);
+        end
+        function fcm = fcmean(this, varargin)
+            ip = inputParser;
+            addRequired(ip, 'fc0', @isnumeric)
+            addOptional(ip, 'rsn', '', @ischar)
+            addOptional(ip, 'rsn2', '', @ischar)
+            parse(ip, varargin{:})
+            ipr = ip.Results;
+            leye = logical(eye(size(ipr.fc0)));
+            ipr.fc0(leye) = nan;
+            ipr.rsn = lower(ipr.rsn);
+            
+            if isempty(ipr.rsn)
+                fcm = dipmean(ipr.fc0, 'omitnan');
+                return
+            end
+            if isempty(ipr.rsn2)
+                ranges = this.rsnRangesChar();
+                ranges = ranges(ipr.rsn);
+                tmp = ipr.fc0(ranges, ranges);
+                fcm = dipmean(tmp, 'omitnan');
+                return
+            end
+            
+            ranges = this.rsnRangesChar();
+            ranges1 = ranges(ipr.rsn);
+            ranges2 = ranges(ipr.rsn2);
+            tmp = ipr.fc0(ranges1, ranges2);
+            fcm = dipmean(tmp, 'omitnan');
+        end
         function fp = fileprefix(this, varargin)
             % @param n is the index of the client in the dbstack; default := 1
             
@@ -1058,14 +1141,15 @@ classdef SymmetricAFC < mlafc.AFC
                 end
             end
         end
-        function fc1 = resampleFunctionalConnectivityAll(this, varargin)
+        function [fc1,fc0] = resampleFunctionalConnectivityAll(this, varargin)
             %% resamples fc using samples{1,2} derived from mlpetersen.BigBrain300.imagingContext, typically
             %  the output of mlpetersen.BigBrain300.imagingContextSampling.  The contents of samples1 determine
             %  the ordering by which fc1 has its indices sorted.  
             %  @param required fc is numeric for Nvoxels x Nvoxels, in Carl Hacker's format.
             %  @param required samples1 is understood by ImagingContext2 and describes samples for x.
             %  @returns fc1, which is smaller than fc, and which has indices sorted according to the
-            %           contents of samples1.
+            %           contents of samples1, and which has null rows & cols separating RSNs.
+            %  @returns fc0, which lacks null rows & cols separating RSNs.  Useful for further computations.
             
             ip = inputParser;
             addRequired(ip, 'fc', @isnumeric)
@@ -1094,16 +1178,18 @@ classdef SymmetricAFC < mlafc.AFC
                 end
             end
             
-            fc1 = this.reshape201(fc1);
+            fc0 = fc1;
+            fc1 = this.reshape201(fc0);
         end
-        function fc1 = resampleFunctionalConnectivityReals(this, varargin)
+        function [fc1,fc0] = resampleFunctionalConnectivityReals(this, varargin)
             %% resamples fc using samples{1,2} derived from mlpetersen.BigBrain300.imagingContext, typically
             %  the output of mlpetersen.BigBrain300.imagingContextSampling.  The contents of samples1 determine
             %  the ordering by which fc1 has its indices sorted.  
             %  @param required fc is numeric for Nvoxels x Nvoxels, in Carl Hacker's format.
             %  @param required samples1 is understood by ImagingContext2 and describes samples for x.
             %  @returns fc1, which is smaller than fc, and which has indices sorted according to the
-            %           contents of samples1.
+            %           contents of samples1, and which has null rows & cols separating RSNs.
+            %  @returns fc0, which lacks null rows & cols separating RSNs.  Useful for further computations.
             
             ip = inputParser;
             addRequired(ip, 'fc', @isnumeric)
@@ -1132,9 +1218,10 @@ classdef SymmetricAFC < mlafc.AFC
                 end
             end
             
-            fc1 = this.reshape201(fc1);
+            fc0 = fc1;
+            fc1 = this.reshape201(fc0);
         end
-        function fc1 = reshape201(~, fc)
+        function fc1 = reshape201(this, fc)
             %% arranges Gramian fc (201 x 201) to move DAN and inserts rows/cols nans to separate 15 RSNs
             
             assert(size(fc,1) == 201)
@@ -1161,22 +1248,7 @@ classdef SymmetricAFC < mlafc.AFC
             fc_(1:201,1:201) = fc;            
             
             % define RSN ranges
-            rr = containers.Map('KeyType', 'double', 'ValueType', 'any'); % RSN ranges
-            rr(1) = 1:22;     % smd
-            rr(2) = 23:26;    % smi
-            rr(3) = 27:45;    % con
-            rr(4) = 46:57;    % aud *
-            rr(5) = 58:96;    % dmn *
-            rr(6) = 97:99;    % pmn
-            rr(7) = 100:120;  % vis *
-            rr(8) = 121:134;  % fpn * 
-            rr(9) = 135:142;  % sal
-            rr(10) = 143:147; % van
-            rr(11) = 148:164; % dan
-            rr(12) = 165:179; % bga
-            rr(13) = 180:191; % tha
-            rr(14) = 192:196; % mtl
-            rr(15) = 197:201; % rew
+            rr = this.rsnRangesNumeric();
             
             % relocate RSNs and insert RSN boundary markers
             ortho = eye(215);
@@ -1195,6 +1267,46 @@ classdef SymmetricAFC < mlafc.AFC
                 fc1(rr_(end)+j,:) = nan(1,215);
                 fc1(:,rr_(end)+j) = nan(215,1);
             end
+        end
+        function rr = rsnRangesChar(~)
+            
+            % define RSN ranges
+            rr = containers.Map('KeyType', 'char', 'ValueType', 'any'); % RSN ranges
+            rr('smd') = 1:22;     % smd
+            rr('sml') = 23:26;    % sml
+            rr('con') = 27:45;    % con
+            rr('aud') = 46:57;    % aud *
+            rr('dmn') = 58:96;    % dmn *
+            rr('pmn') = 97:99;    % pmn
+            rr('vis') = 100:120;  % vis *
+            rr('fpn') = 121:134;  % fpn * 
+            rr('sal') = 135:142;  % sal
+            rr('van') = 143:147; % van
+            rr('dan') = 148:164; % dan
+            rr('bga') = 165:179; % bga
+            rr('tha') = 180:191; % tha
+            rr('mtl') = 192:196; % mtl
+            rr('rew') = 197:201; % rew
+        end
+        function rr = rsnRangesNumeric(~)
+            
+            % define RSN ranges
+            rr = containers.Map('KeyType', 'double', 'ValueType', 'any'); % RSN ranges
+            rr(1) = 1:22;     % smd
+            rr(2) = 23:26;    % sml
+            rr(3) = 27:45;    % con
+            rr(4) = 46:57;    % aud *
+            rr(5) = 58:96;    % dmn *
+            rr(6) = 97:99;    % pmn
+            rr(7) = 100:120;  % vis *
+            rr(8) = 121:134;  % fpn * 
+            rr(9) = 135:142;  % sal
+            rr(10) = 143:147; % van
+            rr(11) = 148:164; % dan
+            rr(12) = 165:179; % bga
+            rr(13) = 180:191; % tha
+            rr(14) = 192:196; % mtl
+            rr(15) = 197:201; % rew
         end
         function savefig(this, varargin)
             
@@ -1250,22 +1362,23 @@ classdef SymmetricAFC < mlafc.AFC
                 fullfile(this.patientdir, sprintf('%s_%s%s', this.patientid, client_, this.registry.tag));
             print(fh,fileprefix,'-dpng',sprintf('-r%d',ipr.res));
         end
-        function fc1 = visualize_Deltaz_sl_fc(this, varargin)
+        function fc1 = visualize_abs_Delta_z_sl_fc(this, varargin)
             globbed = globT('*_sl_fc.mat');
             assert(~isempty(globbed))
             assert(~isempty(this.sl_fc_mean_))
             ld = load(globbed{1}, 'sl_fc');
-            Deltaz = tanh(this.atanh(ld.sl_fc) - this.atanh(this.sl_fc_mean_));            
+            %Deltaz = tanh(this.atanh(ld.sl_fc) - this.atanh(this.sl_fc_mean_));            
+            Deltaz = this.abs_Delta(ld.sl_fc, this.sl_fc_mean_);
             fc1 = this.visualize_sl_fc(Deltaz, 'n', 2, varargin{:});
         end
-        function fc1 = visualize_sl_fc(this, varargin)
+        function [fc1,fc0] = visualize_sl_fc(this, varargin)
             %% visualizes Gramian for Carl's gray-matter mask.
             % @param n is the index of the client in the dbstack; default := 1; used with fileprefix(this).
             %
             % uhit coord	RSN (15)          ortho   ortho
             % 
             % 6:27		    smd                         1:22 
-            % 28:31		    smi                        23:26
+            % 28:31		    sml                        23:26
             % 32:50		    con                        27:45
             % 51:61		    aud                        46:56
             % 62:101		dmn                        57:96
@@ -1293,23 +1406,27 @@ classdef SymmetricAFC < mlafc.AFC
             addParameter(ip, 'n', 1, @isscalar)
             parse(ip, varargin{:})
             ipr = ip.Results;
+            if isempty(ipr.fileprefix)
+                ipr.fileprefix = this.fileprefix('n', ipr.n);
+            end
             
             bb300 = mlpetersen.BigBrain300('711-2B');
             %s300 = bb300.imagingContextSampling(301);
             sall = bb300.imagingContextSampling(20*300);
-            fc1 = this.resampleFunctionalConnectivityAll(ipr.sl_fc, sall);
+            [fc1,fc0] = this.resampleFunctionalConnectivityAll(ipr.sl_fc, sall);
+            if ipr.z
+                fc1 = atanh(fc1);
+                fc0 = atanh(fc0);
+            end
             
             % expensive to build, so save  
             if ipr.save
-                save([this.fileprefix('n', ipr.n) '.mat'], 'fc1')
+                save([ipr.fileprefix '.mat'], 'fc1')
             end
             
             %surf(fc1)
             %hold on
             h = figure;
-            if ipr.z
-                fc1 = atanh(fc1);
-            end
             imagesc(fc1)
             set(gca, 'FontSize', 32)
             if isempty(ipr.colormap) || strcmpi(ipr.colormap, 'fccolormap')
@@ -1335,7 +1452,7 @@ classdef SymmetricAFC < mlafc.AFC
             %ylabel('voxels $\mathbf{x}$', 'Interpreter', 'latex', 'FontSize', 50)  
             %this.savefig_highres(h);
             if ipr.save
-                this.savefig(h, 'fileprefix', this.fileprefix('n', ipr.n));
+                this.savefig(h, 'fileprefix', ipr.fileprefix);
             end
         end
         function fc1 = visualize_free_energy(this, varargin)
@@ -1344,7 +1461,7 @@ classdef SymmetricAFC < mlafc.AFC
             % uhit coord	RSN (15)          ortho   ortho
             % 
             % 6:27		    smd                         1:22 
-            % 28:31		    smi                        23:26
+            % 28:31		    sml                        23:26
             % 32:50		    con                        27:45
             % 51:61		    aud                        46:56
             % 62:101		dmn                        57:96
