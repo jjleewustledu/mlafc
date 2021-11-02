@@ -128,27 +128,6 @@ classdef AFC
             ic = mlfourd.ImagingContext2([ic0.fqfp '_brain.nii.gz']);
             ic.selectImagingFormatTool()
         end
-        function calc_jsdiv(varargin)
-            ip = inputParser;
-            addOptional(ip, 'toglob', 'PT*', @ischar)
-            addParameter(ip, 'outTag', '_softmax', @ischar)
-            parse(ip, varargin{:})
-            ipr = ip.Results;
-                        
-            for g = globFoldersT(ipr.toglob)
-                pwd0 = pushd(g{1});
-                
-                segmentation = globT([g{1} '_*_segmentation_final_111.nii.gz']);
-                seg = mlfourd.ImagingContext2(segmentation{1});
-                afc_prob = mlfourd.ImagingContext2([g{1} ipr.outTag '_111.nii.gz']);
-                gm = mlfourd.ImagingContext2(fullfile(getenv('REFDIR'), 'gm3d_111.nii.gz')); % no cerebellum
-%                gm = gm.masked(double(afc_prob.numgt(0.008))); % 0.008 is the left tail of histograms                
-                jsdiv = afc_prob.jsdiv(seg, gm);
-                fprintf('jsdiv(%s) = %g\n',afc_prob.fileprefix, jsdiv)
-                
-                popd(pwd0)
-            end
-        end
         function Delta_fc = Delta(fc, fc0)
             Delta_fc = tanh(mlafc.AFC.atanh(double(fc)) - mlafc.AFC.atanh(double(fc0)));
         end

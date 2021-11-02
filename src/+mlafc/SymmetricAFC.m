@@ -309,12 +309,61 @@ classdef SymmetricAFC < mlafc.AFC
             end
             
             save(reg.Z_G_mat, 'Z_G');
+        end        
+        function calc_jsdiv(varargin)
+            ip = inputParser;
+            addOptional(ip, 'toglob', 'PT*', @ischar)
+            addParameter(ip, 'outTag', '_softmax', @ischar)
+            parse(ip, varargin{:})
+            ipr = ip.Results;
+            reg = mlafc.AFCRegistry.instance();
+                        
+            for g = globFoldersT(ipr.toglob)
+                pwd0 = pushd(g{1});
+                
+                segmentation = globT([g{1} '_*_segmentation_final_111.nii.gz']);
+                seg = mlfourd.ImagingContext2(segmentation{1});
+                afc_prob = mlfourd.ImagingContext2([g{1} ipr.outTag reg.fileTag reg.productTag '_111.nii.gz']);
+                gm = mlfourd.ImagingContext2(fullfile(getenv('REFDIR'), 'N21_aparc+aseg_GMctx_on_711-2V_333_avg_zlt0.5_gAAmask_v1_binarized_111.nii.gz'));
+                jsdiv = afc_prob.jsdiv(seg, gm);
+                fprintf('jsdiv(%s) = %g\n',afc_prob.fileprefix, jsdiv)
+                
+                popd(pwd0)
+            end
         end
-        function v = calc_violinplot(varargin)
+        function calc_median(varargin)
+            ip = inputParser;
+            addOptional(ip, 'toglob', 'PT*', @ischar)
+            addParameter(ip, 'outTag', '_softmax', @ischar)
+            parse(ip, varargin{:})
+            ipr = ip.Results;
+            reg = mlafc.AFCRegistry.instance();
+            map = @mlafc.AFC.probToKLSample;
+                        
+            for g = globFoldersT(ipr.toglob)
+                pwd0 = pushd(g{1});
+                
+                gm = mlfourd.ImagingContext2(fullfile(getenv('REFDIR'), 'N21_aparc+aseg_GMctx_on_711-2V_333_avg_zlt0.5_gAAmask_v1_binarized_111.nii.gz'));                                
+                segmentation = globT([g{1} '_*_segmentation_final_111.nii.gz']);
+                seg = mlfourd.ImagingContext2(segmentation{1});
+                seg = seg .* gm;
+                afc_prob = mlfourd.ImagingFormatContext([g{1} ipr.outTag reg.fileTag reg.productTag '_111.nii.gz']);
+                median_seg = median(map(afc_prob.img(logical(seg) & afc_prob.img > 0)));
+                median_gm = median(map(afc_prob.img(logical(gm) & afc_prob.img > 0)));
+                fprintf('median:(%s) %g within resection, %g gray-matter\n',afc_prob.fileprefix, median_seg, median_gm)
+                
+                popd(pwd0)
+            end
+        end
+        function [v,medians,ranks] = calc_violinplot(varargin)
             %  @param transform is a function handle, e.g., @probToKLSample.
+            %  @return violinplot object
+            %  @return medians ordered according to violinplot
+            %  @return ranks codes the Engel classes
             %  e.g.:
             %  mlafc.AFC.calc_violinplot('PT*', 'ylabel', '$-\log(p/p_0)$', 'interpreter', 'latex', 'transform', @mlafc.AFC.probToKLSample)
             
+            dmn = mlfourd.ImagingContext2(fullfile(getenv('REFDIR'), 'Yeo', 'Yeo2011_DMN_333.4dfp.hdr'));
             ip = inputParser;
             addOptional(ip, 'toglob', 'PT*', @ischar)
             addParameter(ip, 'filestring', '', @ischar)
@@ -323,14 +372,16 @@ classdef SymmetricAFC < mlafc.AFC
             addParameter(ip, 'ylabel', '$-\log(P(x)/P_0)$')
             addParameter(ip, 'interpreter', 'latex', @ischar)
             addParameter(ip, 'transform', @mlafc.AFC.probToKLSample)
+            addParameter(ip, 'mask', [])
             parse(ip, varargin{:})
             ipr = ip.Results;
             globbed = globFoldersT(ipr.toglob);
             reg = mlafc.AFCRegistry.instance();
             
-            %mask = mlfourd.ImagingContext2(fullfile(getenv('REFDIR'), 'gm3d.nii.gz'));
-            %mask = mask.binarized();
             mask = mlafc.AFC.imagingContext_mask();
+            if ~isempty(ipr.mask)
+                mask = mask .* ipr.mask;
+            end
             mask = mask.binarized();
             Nvxl = dipsum(mask);
             Npts = length(globbed);
@@ -341,6 +392,7 @@ classdef SymmetricAFC < mlafc.AFC
             else
                 home = '/data/nil-bluearc/shimony/jjlee/FocalEpilepsy';
             end
+            medians = nan(1, Npts);
             for ig = 1:Npts
                 try
                     cd(fullfile(home, globbed{ig}));
@@ -352,11 +404,13 @@ classdef SymmetricAFC < mlafc.AFC
                             globbed{ig}, ipr.filestring));
                     end
                     img = afc_prob.nifti.img;
-                    fprintf('gm sum -> %g\n', dipsum(img))
                     data(:,ig) = reshape(img(logical(mask)), [Nvxl 1]); 
                     if ~isempty(ipr.transform)
                         data(:,ig) = ipr.transform(data(:, ig));
                     end
+                    img_ = data(:,ig);
+                    medians(ig) = median(img_(img_ > eps));
+                    fprintf('%s: sum->%g, median->%g\n', globbed{ig}, dipsum(img), medians(ig))
                 catch ME
                     handwarning(ME)
                 end
@@ -364,12 +418,26 @@ classdef SymmetricAFC < mlafc.AFC
             cd(home)
 
             h = figure;
-            if contains(ipr.toglob, 'PT')          
-                %labels = {'PT15 (Ia)' 'PT26 (IV)' 'PT28 (Ia)' 'PT29 (IV)' 'PT34 (IIa)' 'PT35 (IV)' 'PT36 (Ia)'};  
+            if contains(ipr.toglob, 'PT')      
+                
                 labels = {'1 (Ia)' '5 (IV)' '2 (Ia)' '6 (IV)' '4 (IIa)' '7 (IV)' '3 (Ia)'};  
-                ordering = [1 3 7 5 2 4 6]; % pt28, pt15, pt36, pt34, pt26, pt29, p35
+%                labels = {'PT15 (Ia)' 'PT26 (IV)' 'PT28 (Ia)' 'PT29 (IV)' 'PT34 (IIa)' 'PT35 (IV)' 'PT36 (Ia)'};
+%                labels = {'PT15 (Ia)' 'PT18 (III)' 'PT26 (IV)' 'PT27 (IV)' 'PT28 (Ia)' ...
+%                          'PT29 (IV)' 'PT34 (IIa)' 'PT35 (IV)' 'PT36 (Ia)' 'PT41 (Ib)' ...
+%                          'PT5 (IId)' 'PT7 (Ib)'};
+%                labels = {'1 (Ia)'   '(III)'   '5 (IV)'   '(IV)' '2 (Ia)' ...
+%                          '6 (IV)' '4 (IIa)'   '7 (IV)' '3 (Ia)'   '(Ib)' ...
+%                            '(IId)'  '(Ib)'};
+
+                ordering = [1 3 7 5 2 4 6]; % pt15 pt28, pt36, pt34, pt26, pt29, p35
+%                ordering = [1 5 9 10 12 7 11 2 4 3 6 8];
+
                 labels = labels(ordering);
                 data(:,:) = data(:,ordering);
+                medians = medians(ordering);
+                
+                ranks = [1 1 1 2 3 3 3];
+%                ranks = [1 1 1 2 2 3 4 5 6 6 6 6];
             else                
                 labels = cellfun(@(x) strrep(x, '_Ses1', ''), globbed, 'UniformOutput', false);
             end
@@ -393,9 +461,9 @@ classdef SymmetricAFC < mlafc.AFC
 
             if contains(globbed{1}, 'PT')
                 cohort = 'pts';
-                set(gca, 'fontsize', 26)
-                ylabel(ipr.ylabel, 'Interpreter', ipr.interpreter, 'FontSize', 42)
-                xlabel('patient ID (Engel class)', 'FontSize', 38)
+                set(gca, 'fontsize', 24)
+                ylabel(ipr.ylabel, 'Interpreter', ipr.interpreter, 'FontSize', 20)
+                xlabel('patient ID (Engel class)', 'FontSize', 18)
             elseif contains(globbed{1}, 'Sub')
                 cohort = 'subs';
                 set(gca, 'fontsize', 26)
@@ -414,6 +482,11 @@ classdef SymmetricAFC < mlafc.AFC
             saveas(figs(1), ...
                 sprintf('calc_violinplot%s%s_%i%s.png', reg.fileTag, reg.productTag, Npts, cohort))
 %                close(figs(1))
+
+            [rho,pval] = corr(ranks', medians', 'Type', 'Spearman');
+            fprintf('Spearman: rho->%g, pval->%g\n', rho, pval)
+            [rho,pval] = corr(ranks', medians', 'Type', 'Kendall');
+            fprintf('Kendall: rho->%g, pval->%g\n', rho, pval)
         end 
         function c = client(n)
             assert(isscalar(n))
@@ -1037,7 +1110,7 @@ classdef SymmetricAFC < mlafc.AFC
                           % N_t x N_vxls ~ 2307 x 18611 single
                           % N_t is variable across studies
             if ~isempty(ipr.Nframes)
-                bold_frames = bold_frames(1:ipr.Nframes, :);                
+                bold_frames = bold_frames(1:ipr.Nframes, :);
                 fprintf('makeSoftmax.bold_frames.size -> %s\n', mat2str(size(bold_frames)))
             end           
             
