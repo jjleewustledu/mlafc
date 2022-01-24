@@ -77,7 +77,7 @@ classdef AFC
                 bin, ipr.ic0.fqfp, ipr.mat, ipr.out_fqfp, ipr.interp, ipr.icref.fqfp))
             %flirt -in PT15_4_seg_111_nopriorsurg.nii.gz -applyxfm -init PT15_4_FLIRT_on_mpr1_111_brain.mat -out PT15_4_seg_111_nopriorsurg_on_mpr_111.nii.gz -paddingsize 0.0 -interp nearestneighbour -ref PT15_mpr1_on_TRIO_Y_NDC_111.nii.gz
             ic = mlfourd.ImagingContext2([ipr.out_fqfp '.nii.gz']);
-            ic.selectImagingFormatTool()
+            ic.selectImagingTool()
         end
         function x = atanh(x)
             %% avoids singularities for x -> {-1, 1}
@@ -110,7 +110,7 @@ classdef AFC
                 mlbash(sprintf('%s %s %s_brain -R -f %i -g 0 -m', bin, ic0.fqfp, ic0.fqfp, ipr.betFrac))
             end
             ic = mlfourd.ImagingContext2([ic0.fqfp '_brain.nii.gz']);
-            ic.selectImagingFormatTool()
+            ic.selectImagingTool()
         end
         function ic = betZ(varargin)
             ip = inputParser;
@@ -126,7 +126,7 @@ classdef AFC
             bin = fullfile(getenv('FSLDIR'), 'bin', 'bet');
             mlbash(sprintf('%s %s %s_brain -Z -f %i -g 0 -m', bin, ic0.fqfp, ic0.fqfp, ipr.betFrac))
             ic = mlfourd.ImagingContext2([ic0.fqfp '_brain.nii.gz']);
-            ic.selectImagingFormatTool()
+            ic.selectImagingTool()
         end
         function Delta_fc = Delta(fc, fc0)
             Delta_fc = tanh(mlafc.AFC.atanh(double(fc)) - mlafc.AFC.atanh(double(fc0)));
@@ -140,7 +140,7 @@ classdef AFC
             mlbash(sprintf('%s -in %s -ref %s -out %s -omat %s.mat -bins 256 -cost corratio -searchrx -90 90 -searchry -90 90 -searchrz -90 90 -dof %i -interp trilinear', bin, ic0.fqfp, icref.fqfp, out_fqfp, out_fqfp, dof))
             %flirt -in PT15_4_FLIRT_111_brain.nii.gz -ref PT15_mpr1_111_brain.nii.gz -out PT15_4_FLIRT_on_mpr1_111_brain.nii.gz -omat PT15_4_FLIRT_on_mpr1_111_brain.mat -bins 256 -cost corratio -searchrx -90 90 -searchry -90 90 -searchrz -90 90 -dof 12  -interp trilinear
             ic = mlfourd.ImagingContext2([out_fqfp '.nii.gz']);
-            ic.selectImagingFormatTool()
+            ic.selectImagingTool()
             matfn = [out_fqfp '.mat'];
         end
         function flirt_to_MNI152(varargin)

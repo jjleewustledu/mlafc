@@ -28,7 +28,7 @@ classdef EmilysAFC < mlafc.KaysAFC
             mlbash(sprintf('%s -in %s -applyxfm -init %s -out %s -paddingsize 0.0 -interp nearestneighbour -ref %s', bin, ic0.fqfp, mat, out_fqfp, icref.fqfp))
             %flirt -in PT15_4_seg_111_nopriorsurg.nii.gz -applyxfm -init PT15_4_FLIRT_on_mpr1_111_brain.mat -out PT15_4_seg_111_nopriorsurg_on_mpr_111.nii.gz -paddingsize 0.0 -interp nearestneighbour -ref PT15_mpr1_on_TRIO_Y_NDC_111.nii.gz
             ic = mlfourd.ImagingContext2([out_fqfp '.nii.gz']);
-            ic.selectImagingFormatTool()
+            ic.selectImagingTool()
         end
         function buildAfcProbOnly(varargin)
             ip = inputParser;
@@ -620,9 +620,9 @@ classdef EmilysAFC < mlafc.KaysAFC
             %antsApplyTransforms -d 3 -i PT15_resection_on_mpr_111.nii.gz -r PT15_anat_ave_t88_333.nii.gz -t [movingToFixed_0GenericAffine.mat, 1] -t movingToFixed_1InverseWarp.nii.gz -o PT15_4_FLIRT_toAnatDeformed.nii.gz
             %antsApplyTransforms -d 3 -i PT15_seg_on_mpr_111.nii.gz -r PT15_anat_ave_t88_333.nii.gz -t [movingToFixed_0GenericAffine.mat, 1] -t movingToFixed_1InverseWarp.nii.gz -n GenericLabel -o PT15_4_seg_toAnatDeformed.nii.gz
             icres = mlfourd.ImagingContext2(resfn);
-            icres.selectImagingFormatTool()
+            icres.selectImagingTool()
             icseg = mlfourd.ImagingContext2(segfn);
-            icseg.selectImagingFormatTool()
+            icseg.selectImagingTool()
         end
         function [icres,icseg] = antsToBoldDeformed(icres0, icseg0, icmpr, icbold)
             %% see also:
@@ -641,9 +641,9 @@ classdef EmilysAFC < mlafc.KaysAFC
             %antsApplyTransforms -d 3 -i PT15_resection_on_mpr_111.nii.gz -r PT15_anat_ave_t88_333.nii.gz -t [movingToFixed_0GenericAffine.mat, 1] -t movingToFixed_1InverseWarp.nii.gz -o PT15_4_FLIRT_toAnatDeformed.nii.gz
             %antsApplyTransforms -d 3 -i PT15_seg_on_mpr_111.nii.gz -r PT15_anat_ave_t88_333.nii.gz -t [movingToFixed_0GenericAffine.mat, 1] -t movingToFixed_1InverseWarp.nii.gz -n GenericLabel -o PT15_4_seg_toAnatDeformed.nii.gz
             icres = mlfourd.ImagingContext2(resfn);
-            icres.selectImagingFormatTool();
+            icres.selectImagingTool();
             icseg = mlfourd.ImagingContext2(segfn);
-            icseg.selectImagingFormatTool();
+            icseg.selectImagingTool();
         end
     end
 
